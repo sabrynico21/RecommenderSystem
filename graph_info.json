@@ -1,0 +1,67 @@
+{
+    "50": {
+        "0": {
+            "number_of_nodes": 24200,
+            "number_of_edges": 19991930
+        },
+        "1": {
+            "number_of_nodes": 23487,
+            "number_of_edges": 9789281
+        },
+        "2": {
+            "number_of_nodes": 21938,
+            "number_of_edges": 5524916
+        },
+        "3": {
+            "number_of_nodes": 20815,
+            "number_of_edges": 3826555
+        },
+        "4": {
+            "number_of_nodes": 19517,
+            "number_of_edges": 2694046
+        }
+    }
+}
+{
+    "50": {
+        "9": {
+            "number_of_nodes": 16549,
+            "number_of_edges": 948781
+        },
+        "19": {
+            "number_of_nodes": 13299,
+            "number_of_edges": 294193
+        },
+        "29": {
+            "number_of_nodes": 10508,
+            "number_of_edges": 125719
+        },
+        "39": {
+            "number_of_nodes": 7227,
+            "number_of_edges": 47869
+        }
+    }
+}{
+    "1": {
+        "51": {
+            "number_of_nodes": 23487,
+            "number_of_edges": 9790613
+        },
+        "41": {
+            "number_of_nodes": 23487,
+            "number_of_edges": 9773017
+        },
+        "31": {
+            "number_of_nodes": 23486,
+            "number_of_edges": 9741474
+        },
+        "21": {
+            "number_of_nodes": 23486,
+            "number_of_edges": 9669115
+        },
+        "11": {
+            "number_of_nodes": 23486,
+            "number_of_edges": 9389648
+        }
+    }
+}
