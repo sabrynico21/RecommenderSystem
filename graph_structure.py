@@ -54,7 +54,6 @@ def create_graph(edge_weights, t_min, t_max):
             product_graph_A.add_edge(product_i_index, product_j_index, weight=weight)   
     return product_graph_A, product_to_index, index_to_product
 
-
 def display_edge_weight_distribution(edge_weights):
     weights = [ weight for _, weight in edge_weights.items()]
     weight_counts = Counter(weights)
@@ -63,54 +62,55 @@ def display_edge_weight_distribution(edge_weights):
     weights = list(sorted_weight_counts.keys())
     counts = list(sorted_weight_counts.values())
 
-    # # Create a line plot
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(weights, counts, marker='o', linestyle='-', color='b')
-
-    # # Set log-log scale
-    # plt.xscale('log')
-    # plt.yscale('log')
-
-    # # Adding labels and title
-    # plt.xlabel('Weights')
-    # plt.ylabel('Frequency')
-    # plt.title('Frequency of each Edge Weight (Log-Log Scale)')
-    # plt.grid(True)
-
-    # # Save the plot
-    # plt.savefig('edge_weights_frequency.png')
-    # plt.show()
-    
-    fit = powerlaw.Fit(weights, discrete=True)
-    
-    # Extract the exponent of the power law
-    alpha = fit.power_law.alpha
-    xmin = fit.power_law.xmin
-
-    # Display the results
-    print(f'Power law exponent: {alpha}')
-    print(f'xmin: {xmin}')
-
-    # Plot the fit on top of the empirical data
     plt.figure(figsize=(10, 6))
-    fit.power_law.plot_ccdf(color='r', linestyle='--', label='Power law fit')
-    plt.plot(weights, counts, marker='o', linestyle='-', color='b', label='Empirical data')
-    
-    # Set log-log scale
+    plt.plot(weights, counts, marker='o', linestyle='-', color='b')
     plt.xscale('log')
     plt.yscale('log')
 
-    # Adding labels and title
     plt.xlabel('Weights')
     plt.ylabel('Frequency')
+    plt.title('Frequency of each Edge Weight (Log-Log Scale)')
+    plt.grid(True)
+
+    plt.savefig('edge_weights_frequency.png')
+    plt.show()
+
+def fit_powerlaw_on_edge_distribution_CDDF(edge_weights):
+
+    weights = [ weight for _, weight in edge_weights.items()]
+    weight_counts = Counter(weights)
+    sorted_weight_counts = OrderedDict(sorted(weight_counts.items()))
+
+    weights = np.array(list(sorted_weight_counts.keys()))
+    counts = np.array(list(sorted_weight_counts.values()))
+
+    # Calculate empirical CCDF
+    empirical_ccdf = 1.0 - np.cumsum(counts) / np.sum(counts)
+
+    # Fit the power law
+    fit = powerlaw.Fit(weights, discrete=True)
+    alpha = fit.power_law.alpha
+    xmin = fit.power_law.xmin
+
+    print(f'Power law exponent: {alpha}')
+    print(f'xmin: {xmin}')
+
+    plt.figure(figsize=(10, 6))
+    fit.power_law.plot_ccdf(color='r', linestyle='--', label='Power law fit')
+    plt.step(weights, empirical_ccdf, where='post', marker='o', linestyle='-', color='b', label='Empirical data')
+
+    plt.xscale('log')
+    plt.yscale('log')
+
+    plt.xlabel('Weights')
+    plt.ylabel('CCDF')
     plt.title('Power Law Fit on Edge Weight Distribution (Log-Log Scale)')
     plt.legend()
     plt.grid(True)
 
-    # Save the plot
     plt.savefig('power_law_fit.png')
     plt.show()
-
+    
 def calculate_graph_info(edge_weights, t_min):
     graph_info = {}
     graph_info[int(t_min)] = {}
@@ -190,7 +190,7 @@ def calculate_clusters(graph, reduced_graph, selected_nodes):
 def validation(graph, reduced_graph, num_nodes):
     selected_nodes = random.sample(list(graph.nodes()), num_nodes)
     print(selected_nodes)
-    original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes)
+    original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes) 
     result = 0
     for or_cluster, red_cluster in zip(original_cluster, reduced_cluster):
         den = num = 0
@@ -222,6 +222,9 @@ def main():
         with open('edge_weights.pkl', 'rb') as file:
             edge_weights = pickle.load(file)
         
+        #display_edge_weight_distribution(edge_weights)
+        fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
+        exit(0)
         product_graph, product_to_index, index_to_product = create_graph(edge_weights, int(args.t_min), int(args.t_max))
 
         with open("graph.pkl", "wb") as f:
@@ -239,19 +242,18 @@ def main():
         else:
             print(f"File {file_path} does not exist.")
     
-    #display_edge_weight_distribution(edge_weights)
-
     print("Number of nodes:", product_graph.number_of_nodes())
     print("Number of edges:", product_graph.number_of_edges())
+
     percent = 30
     reduced_graph = remove_random_edges(product_graph, percent)
 
     print("Number of nodes:", reduced_graph.number_of_nodes())
     print("Number of edges:", reduced_graph.number_of_edges())
+
     value = validation(product_graph, reduced_graph, 1)
     print(value)
-    exit(0)
-
+    
     host = 'localhost'
     port = 8123
     database = 'mydb'
