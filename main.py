@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QFormLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem,
-    QSizePolicy, QHeaderView, QGroupBox, QAbstractItemView
+    QSizePolicy, QHeaderView, QGroupBox, QAbstractItemView, QComboBox, QHBoxLayout
 )
 from PyQt5.QtCore import Qt, QSize 
 from PyQt5.QtGui import QFont, QPalette, QColor, QPixmap
@@ -13,7 +13,7 @@ import os
 import sys
 import clickhouse_connect
 from utils import page_rank_nibble
-
+import pyqtgraph as pg
 
 class CustomLineEdit(QLineEdit):
     def __init__(self, placeholder_text="", *args, **kwargs):
@@ -66,6 +66,9 @@ class CustomGroupBox(QGroupBox):
         """)
 
 class PageRankNibbleApp(QMainWindow):
+    def setup_table_widget(self):
+        self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        
     def __init__(self, graph_path="graph.pkl", dict_path="products_dict.pkl", **client_params):
         super().__init__()
 
@@ -112,11 +115,6 @@ class PageRankNibbleApp(QMainWindow):
         self.top_left_group_box_layout = QVBoxLayout()
         self.top_left_group_box.setLayout(self.top_left_group_box_layout)
 
-        # self.label = QLabel("Enter Product ID:")
-        # self.label.setFont(QFont("Arial", 14, QFont.Bold))
-        # self.label.setStyleSheet("color: #ffffff;")  # White color for contrast
-        # self.top_left_group_box_layout.addWidget(self.label, alignment=Qt.AlignCenter)
-
         self.product_id_entry = CustomLineEdit("Enter ID here...")
         self.top_left_group_box_layout.addWidget(self.product_id_entry, alignment=Qt.AlignCenter)
 
@@ -125,39 +123,6 @@ class PageRankNibbleApp(QMainWindow):
         self.top_left_group_box_layout.addWidget(self.submit_button, alignment=Qt.AlignCenter)
 
         self.main_layout.addWidget(self.top_left_group_box, 0, 0)
-
-        # # Product Info Table at top right
-        # self.top_right_group_box = CustomGroupBox("Product Information")
-        # self.top_right_group_box_layout = QVBoxLayout()
-        # self.top_right_group_box.setLayout(self.top_right_group_box_layout)
-
-        # self.info_table_widget = QTableWidget()
-        # self.info_table_widget.setColumnCount(3)  # Three columns: Product Index, Description, Category
-        # self.info_table_widget.setHorizontalHeaderLabels(["Product Index", "Description", "Category"])
-        # self.info_table_widget.setStyleSheet("""
-        #     QTableWidget {
-        #         border: 1px solid #ddd;
-        #         background-color: #ffffff;
-        #         padding: 10px;
-        #     }
-        #     QHeaderView::section {
-        #         background-color: #f0f0f0;
-        #         border: 1px solid #ddd;
-        #         padding: 5px;
-        #         font-weight: bold;
-        #     }
-        #     QTableWidget::item {
-        #         padding: 5px;
-        #     }
-        # """)
-        # self.info_table_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Set to read-only mode
-        # header_info_table = self.info_table_widget.horizontalHeader()
-        # header_info_table.setSectionResizeMode(QHeaderView.Stretch)
-        # self.info_table_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        # self.info_table_widget.setWordWrap(True)
-        # self.top_right_group_box_layout.addWidget(self.info_table_widget)
-
-        # self.main_layout.addWidget(self.top_right_group_box, 0, 1)
 
         # Product Info Card at top right
         self.top_right_group_box = CustomGroupBox("Product Information")
@@ -210,8 +175,8 @@ class PageRankNibbleApp(QMainWindow):
         self.bottom_left_group_box.setLayout(self.bottom_left_group_box_layout)
 
         self.table_widget = QTableWidget()
-        self.table_widget.setColumnCount(2)  # Two columns: Description and Category
-        self.table_widget.setHorizontalHeaderLabels(["Description", "Category"])
+        self.table_widget.setColumnCount(3)  # Three columns: Index, Description and Category
+        self.table_widget.setHorizontalHeaderLabels(["Id","Description", "Category"])
         self.table_widget.setStyleSheet("""
             QTableWidget {
                 border: 1px solid #ddd;
@@ -233,22 +198,61 @@ class PageRankNibbleApp(QMainWindow):
         header.setSectionResizeMode(QHeaderView.Stretch)
         self.table_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table_widget.setWordWrap(True)
+
+        self.setup_table_widget()
         self.bottom_left_group_box_layout.addWidget(self.table_widget)
 
         self.main_layout.addWidget(self.bottom_left_group_box, 1, 0)
-
+        
         # Cluster Graph at bottom right
+        # Create the label and combo box for node count
+        self.node_count_label = QLabel("Number of cluster nodes:")
+        self.node_count_label.setFont(label_font)
+        self.node_count_label.setStyleSheet("color: rgb(255, 255, 153); padding: 5px;")
+
+        self.node_count_combo = QComboBox()
+        self.node_count_combo.setStyleSheet("""
+            QComboBox {
+                min-width: 70px;  /* Minimum width */
+                max-width: 70px;  /* Maximum width */
+            }
+            QComboBox::drop-down {
+                width: 20px;  /* Width of the dropdown arrow */
+            }
+        """)
+        self.node_count_combo.addItems(['5', '10', '15', '20', '25', '30'])
+        self.node_count_combo.currentIndexChanged.connect(self.run_page_rank_nibble)
+
+        # Create a horizontal layout to hold the label and combo box
+        h_layout = QHBoxLayout()
+        h_layout.addWidget(self.node_count_label, alignment=Qt.AlignCenter)
+        h_layout.addWidget(self.node_count_combo, alignment=Qt.AlignCenter)
+
+        # Create the group box and layout if not already created
         self.bottom_right_group_box = CustomGroupBox("Cluster Graph")
         self.bottom_right_group_box_layout = QVBoxLayout()
-        self.bottom_right_group_box.setLayout(self.bottom_right_group_box_layout)
+        # Add the horizontal layout to the group box layout with center alignment
+        self.bottom_right_group_box_layout.addLayout(h_layout)
 
+        # Create a placeholder for the cluster graph
+        self.cluster_graph_placeholder = QWidget()  # A placeholder widget for the cluster graph
+        self.bottom_right_group_box_layout.addWidget(self.cluster_graph_placeholder)
+
+        # Create a PyQtGraph PlotWidget
+        self.plot_widget = pg.PlotWidget()
+        self.bottom_right_group_box_layout.addWidget(self.plot_widget)
+        
+        self.plot_widget.setBackground(QColor('white'))
+        self.plot_widget.hideAxis('left')
+        self.plot_widget.hideAxis('bottom')
+        self.plot_widget.showGrid(x=False, y=False)  
+        self.plot_widget.autoRange()
+
+        self.bottom_right_group_box.setLayout(self.bottom_right_group_box_layout)
         self.main_layout.addWidget(self.bottom_right_group_box, 1, 1)
 
-        # Set equal stretch for rows and columns
         self.main_layout.setColumnStretch(0, 1)
         self.main_layout.setColumnStretch(1, 1)
-        #self.main_layout.setRowStretch(0, 1)
-        #self.main_layout.setRowStretch(1, 1)
 
     def run_page_rank_nibble(self):
         product_id = self.product_id_entry.text()
@@ -264,6 +268,8 @@ class PageRankNibbleApp(QMainWindow):
 
         try:
             seed, cluster = page_rank_nibble(self.graph, n, phi, beta, epsilon, "unweighted", self.id_to_index[product_id])
+            num_nodes = int(self.node_count_combo.currentText())
+            cluster = cluster[ : min(num_nodes, len(cluster))]
             desc = self.get_cluster_desc(cluster)
             cluster_graph = self.get_cluster_graph(cluster)
             self.display_graph(cluster_graph)
@@ -291,120 +297,160 @@ class PageRankNibbleApp(QMainWindow):
         return desc
 
     def display_product_info(self, product_id, product_info):
-        # self.info_table_widget.setRowCount(1)
-        # item = QTableWidgetItem(str(product_id))
-        # item.setTextAlignment(Qt.AlignCenter)
-        # self.info_table_widget.setItem(0, 0, item)
-        # self.info_table_widget.setItem(0, 1, QTableWidgetItem(product_info[0]))
-        # self.info_table_widget.setItem(0, 2, QTableWidgetItem(product_info[1]))
         self.product_index_value.setText(str(product_id))
         self.description_value.setText(product_info[0])
         self.category_value.setText(product_info[1])
 
     def display_descriptions(self, descriptions):
-        self.table_widget.setRowCount(len(descriptions))
+        self.table_widget.setRowCount(len(descriptions)+1)
         for row, (product, (descr, cat)) in enumerate(descriptions.items()):
-            self.table_widget.setItem(row, 0, QTableWidgetItem(descr))
-            self.table_widget.setItem(row, 1, QTableWidgetItem(cat))
-        self.table_widget.resizeRowsToContents()
+            index_item = QTableWidgetItem(str(product))
+            descr_item = QTableWidgetItem(descr)
+            cat_item = QTableWidgetItem(cat)
 
-    # def display_graph(self, graph):
-    #     # Clear the existing graph layout but keep the title
-    #     for i in reversed(range(self.bottom_right_group_box.layout().count())):
-    #         widget = self.bottom_right_group_box.layout().itemAt(i).widget()
-    #         if widget is not None: #and widget != self.graph_title:
-    #             widget.deleteLater()
+            # Center align the text in all columns
+            index_item.setTextAlignment(Qt.AlignCenter)
+            descr_item.setTextAlignment(Qt.AlignCenter)
+            cat_item.setTextAlignment(Qt.AlignCenter)
 
-    #     fig, ax = plt.subplots(figsize=(7, 5))
-    #     pos = nx.spring_layout(graph)
-    #     nx.draw(graph, pos, with_labels=True, ax=ax, node_color='skyblue', node_size=500, edge_color='gray', linewidths=1, font_size=10)
+            self.table_widget.setItem(row, 0, index_item)
+            self.table_widget.setItem(row, 1, descr_item)
+            self.table_widget.setItem(row, 2, cat_item)
+            self.table_widget.resizeRowsToContents()
 
-    #     canvas = FigureCanvas(fig)
-    #     self.bottom_right_group_box.layout().addWidget(canvas)
-    #     canvas.draw()
+    def on_node_click(self, plot, points, nodes):
+        # Remove previous highlights
+        self.clear_row_highlighting()
 
+        # This method is called when a node is clicked
+        for point in points:
+            node_index = point.index()  # Get the index of the clicked node
+            node_id = int(self.index_to_id[nodes[node_index]])  # Get the product ID from the nodes list
+            
+            # Find the row in the table that corresponds to the clicked node
+            for row in range(self.table_widget.rowCount()):
+                item = self.table_widget.item(row, 0)  # Get the item in the first column (product ID)
+                if item is not None:  # Ensure the item exists
+                    table_product_id = int(item.text())  # Get the product ID from the table
+                    if table_product_id == node_id:
+                        # Highlight the row
+                        self.highlight_row(row)
+                        break
+
+    def highlight_row(self, row):
+        # Highlight the row
+        for col in range(self.table_widget.columnCount()):
+            item = self.table_widget.item(row, col)
+            if item is not None:
+                item.setBackground(QColor('#FFDD94'))  # Set the highlight color
+                item.setForeground(QColor('black'))  # Set the text color
+
+        # Scroll to the highlighted row
+        item_to_scroll = self.table_widget.item(row, 0)
+        if item_to_scroll is not None:
+            self.table_widget.scrollToItem(item_to_scroll, QAbstractItemView.PositionAtCenter)
+
+
+    def clear_row_highlighting(self):
+        for row in range(self.table_widget.rowCount()):
+            for col in range(self.table_widget.columnCount()):
+                item = self.table_widget.item(row, col)
+                if item is not None:
+                    item.setBackground(QColor('white'))  # Reset background color
+                    item.setForeground(QColor('black'))  # Reset text color
+    
     def display_graph(self, graph):
-        import pyqtgraph as pg
         from pyqtgraph.Qt import QtGui
-    # Clear the existing graph layout but keep the title
-        for i in reversed(range(self.bottom_right_group_box.layout().count())):
-            widget = self.bottom_right_group_box.layout().itemAt(i).widget()
-            if widget is not None:
-                widget.deleteLater()
-
-        # Create a PyQtGraph PlotWidget
-        plot_widget = pg.PlotWidget()
-        self.bottom_right_group_box.layout().addWidget(plot_widget)
-
-        # Set the background color of the PlotWidget
-        plot_widget.setBackground(QColor('white'))  # Change this color as needed
-
+        import functools
+        
+        self.plot_widget.clear()
+        
         # Convert the networkx graph to PyQtGraph data
-        pos = nx.spring_layout(graph, seed=42)  # Optional: Seed for reproducibility
+        pos = nx.spring_layout(graph, seed=42)
         edges = list(graph.edges())
         nodes = list(graph.nodes())
-
+        
         # Extract node positions
         x = [pos[node][0] for node in nodes]
         y = [pos[node][1] for node in nodes]
-
+        
         # Plot edges
         for edge in edges:
             x_start, y_start = pos[edge[0]]
             x_end, y_end = pos[edge[1]]
-            plot_widget.plot([x_start, x_end], [y_start, y_end], pen=pg.mkPen('gray', width=1))  # Gray edges with width 1
-
-        # Plot nodes
-        plot_widget.plot(x, y, pen=None, symbol='o', symbolSize=40, symbolBrush=pg.mkBrush('skyblue'))  # Larger nodes with skyblue color
-
+            self.plot_widget.plot([x_start, x_end], [y_start, y_end], pen=pg.mkPen('gray', width=1))
+        
+        # Plot nodes as clickable ScatterPlotItems
+        scatter = pg.ScatterPlotItem(x=x, y=y, symbol='o', size=20, brush=pg.mkBrush('skyblue'))
+        self.plot_widget.addItem(scatter)
+        
         # Add node indices as text labels
         for node in nodes:
             x_pos, y_pos = pos[node]
             text_item = pg.TextItem(str(node), color='black', anchor=(0.5, 0.5))
             text_item.setPos(x_pos, y_pos)
-            text_item.setFont(QtGui.QFont('Arial', 10))  # Increase the font size for the text labels
-            plot_widget.addItem(text_item)
-
-        # Remove axis labels and grid
-        plot_widget.hideAxis('left')
-        plot_widget.hideAxis('bottom')
-        plot_widget.showGrid(x=False, y=False)
-
-        # Optionally, adjust the view to fit the graph
-        plot_widget.autoRange()
+            text_item.setFont(QtGui.QFont('Arial', 10))
+            self.plot_widget.addItem(text_item)
+        
+        # self.plot_widget.hideAxis('left')
+        # self.plot_widget.hideAxis('bottom')
+        # self.plot_widget.showGrid(x=False, y=False)
+        self.plot_widget.autoRange()
+        
+        # Connect the node clicks to a handler function
+        scatter.sigClicked.connect(functools.partial(self.on_node_click, nodes=nodes))
 
     # def display_graph(self, graph):
-    #     from pyvis.network import Network
-    #     import tempfile
-    #     from PyQt5.QtWebEngineWidgets import QWebEngineView
-    #     from PyQt5.QtCore import QUrl
+    #     import pyqtgraph as pg
+    #     from pyqtgraph.Qt import QtGui
     #     # Clear the existing graph layout but keep the title
-    #     for i in reversed(range(self.bottom_right_group_box_layout.count())):
-    #         widget = self.bottom_right_group_box_layout.itemAt(i).widget()
+    #     for i in reversed(range(self.bottom_right_group_box.layout().count())):
+    #         widget = self.bottom_right_group_box.layout().itemAt(i).widget()
     #         if widget is not None:
     #             widget.deleteLater()
 
-    #     # Create a pyvis Network object
-    #     net = Network(height='600px', width='100%', notebook=False)
-        
-    #     # Add nodes and edges to the Network
-    #     for node in graph.nodes():
-    #         net.add_node(node)
-    #     for edge in graph.edges():
-    #         net.add_edge(edge[0], edge[1])
-        
-    #     # Generate a temporary HTML file to display the graph
-    #     html_file = tempfile.NamedTemporaryFile(delete=False, suffix='.html')
-    #     html_file_path = html_file.name
-    #     net.save_graph(html_file_path)
-    #     html_file.close()  # Ensure the file is closed
+    #     # Create a PyQtGraph PlotWidget
+    #     plot_widget = pg.PlotWidget()
+    #     self.bottom_right_group_box.layout().addWidget(plot_widget)
 
-    #     # Create a QWebEngineView to display the HTML
-    #     graph_view = QWebEngineView()
-    #     graph_view.setUrl(QUrl.fromLocalFile(html_file_path))
+    #     # Set the background color of the PlotWidget
+    #     plot_widget.setBackground(QColor('white'))  # Change this color as needed
 
-    #     # Add the QWebEngineView widget to the layout
-    #     self.bottom_right_group_box_layout.addWidget(graph_view)
+    #     # Convert the networkx graph to PyQtGraph data
+    #     pos = nx.spring_layout(graph, seed=42)  # Optional: Seed for reproducibility
+    #     edges = list(graph.edges())
+    #     nodes = list(graph.nodes())
+
+    #     # Extract node positions
+    #     x = [pos[node][0] for node in nodes]
+    #     y = [pos[node][1] for node in nodes]
+
+    #     # Plot edges
+    #     for edge in edges:
+    #         x_start, y_start = pos[edge[0]]
+    #         x_end, y_end = pos[edge[1]]
+    #         plot_widget.plot([x_start, x_end], [y_start, y_end], pen=pg.mkPen('gray', width=1))  # Gray edges with width 1
+
+    #     # Plot nodes as clickable ScatterPlotItems
+    #     scatter = pg.ScatterPlotItem(x=x, y=y, symbol='o', size=20, brush=pg.mkBrush('skyblue'))
+    #     plot_widget.addItem(scatter)
+
+    #     # Add node indices as text labels
+    #     for node in nodes:
+    #         x_pos, y_pos = pos[node]
+    #         text_item = pg.TextItem(str(node), color='black', anchor=(0.5, 0.5))
+    #         text_item.setPos(x_pos, y_pos)
+    #         text_item.setFont(QtGui.QFont('Arial', 10))  # Increase the font size for the text labels
+    #         plot_widget.addItem(text_item)
+
+    #     plot_widget.hideAxis('left')
+    #     plot_widget.hideAxis('bottom')
+    #     plot_widget.showGrid(x=False, y=False)
+
+    #     plot_widget.autoRange()
+    #     import functools
+    #     # Connect the node clicks to a handler function
+    #     scatter.sigClicked.connect(functools.partial(self.on_node_click, nodes=nodes))
 
 if __name__ == "__main__":
     client_params = {
