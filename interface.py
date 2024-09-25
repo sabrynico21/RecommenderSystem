@@ -1,116 +1,25 @@
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QFormLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem,
-    QSizePolicy, QHeaderView, QGroupBox, QAbstractItemView, QComboBox, QHBoxLayout
-)
-from PyQt5.QtCore import Qt, QSize 
-from PyQt5.QtGui import QFont, QPalette, QColor, QPixmap
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.pyplot as plt
+import pyqtgraph as pg
 import networkx as nx
 import pickle
-import os
 import sys
 import clickhouse_connect
 from utils import page_rank_nibble
-import pyqtgraph as pg
-
-class CustomLineEdit(QLineEdit):
-    def __init__(self, placeholder_text="", *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setPlaceholderText(placeholder_text)
-        self.setFont(QFont("Arial", 12))
-        self.setStyleSheet("""
-            padding: 10px; 
-            border: 2px solid #007bff; 
-            border-radius: 8px;
-            background-color: #ffffff;
-            font-size: 14px;
-        """)
-
-class CustomPushButton(QPushButton):
-    def __init__(self, text, *args, **kwargs):
-        super().__init__(text, *args, **kwargs)
-        self.setFont(QFont("Arial", 12))
-        self.setStyleSheet("""
-            background-color: #007bff; 
-            color: white; 
-            padding: 12px 20px; 
-            border-radius: 8px; 
-            border: none;
-            font-weight: bold;
-            font-size: 14px;
-        """)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setIconSize(QSize(20, 20))
-        self.setMinimumWidth(100)
-
-class CustomGroupBox(QGroupBox):
-    def __init__(self, title, *args, **kwargs):
-        super().__init__(title, *args, **kwargs)
-        self.setFont(QFont("Arial", 14, QFont.Bold))
-        self.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid gray;
-                border-radius: 5px;
-                margin-top: 4ex;
-                background-color: #001f3f;
-                color: #FFBF00;
-                padding: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 3px;
-            }
-        """)
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QFormLayout, QGridLayout,
+    QLabel, QMessageBox, QTableWidget, QTableWidgetItem,
+    QSizePolicy, QHeaderView, QAbstractItemView, QComboBox, QHBoxLayout
+)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QPalette, QColor
+from graph_utils import load_graph
+from interface_utils import *
 
 class PageRankNibbleApp(QMainWindow):
+
     def setup_table_widget(self):
         self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
-        
-    def __init__(self, graph_path="graph.pkl", dict_path="products_dict.pkl", **client_params):
-        super().__init__()
 
-        # Load the graph
-        if os.path.exists(graph_path):
-            with open(graph_path, "rb") as f:
-                self.graph = pickle.load(f)
-            print("Graph loaded successfully.")
-        else:
-            print(f"File {graph_path} does not exist.")
-            return
-
-        # Initialize data
-        with open(dict_path, 'rb') as f:
-            data = pickle.load(f)
-            self.id_to_index = data['id_to_index']
-            self.index_to_id = data['index_to_id']
-        self.client = clickhouse_connect.get_client(
-            host=client_params["host"], port=client_params["port"],
-            username=client_params["user"], password=client_params["psw"],
-            database=client_params["database"]
-        )
-        self.table_name = client_params["table_name"]
-
-        self.setWindowTitle("PageRank Nibble Interface")
-
-        # Set initial size of the window
-        self.resize(1200, 800)
-
-        # Set application-wide font and background color
-        palette = QPalette()
-        palette.setColor(QPalette.Background, QColor("#001f3f"))  # Deep blue color
-        self.setPalette(palette)
-        QApplication.setStyle("Fusion")
-
-        # Main widget and layout
-        self.main_widget = QWidget()
-        self.setCentralWidget(self.main_widget)
-        self.main_layout = QGridLayout()
-        self.main_widget.setLayout(self.main_layout)
-
-        # Text box, button in a group box at top left
+    def set_top_left_group_box(self):
         self.top_left_group_box = CustomGroupBox("Product ID")
         self.top_left_group_box_layout = QVBoxLayout()
         self.top_left_group_box.setLayout(self.top_left_group_box_layout)
@@ -122,9 +31,7 @@ class PageRankNibbleApp(QMainWindow):
         self.submit_button.clicked.connect(self.run_page_rank_nibble)
         self.top_left_group_box_layout.addWidget(self.submit_button, alignment=Qt.AlignCenter)
 
-        self.main_layout.addWidget(self.top_left_group_box, 0, 0)
-
-        # Product Info Card at top right
+    def set_top_right_group_box(self):
         self.top_right_group_box = CustomGroupBox("Product Information")
         self.top_right_group_box_layout = QVBoxLayout()
         self.top_right_group_box.setLayout(self.top_right_group_box_layout)
@@ -135,8 +42,8 @@ class PageRankNibbleApp(QMainWindow):
         self.info_form_layout.setFormAlignment(Qt.AlignLeft)
 
         # Set font and style for labels and values
-        label_font = QFont("Arial", 12, QFont.Bold)
-        value_font = QFont("Arial", 12)
+        self.label_font = QFont("Arial", 12, QFont.Bold)
+        self.value_font = QFont("Arial", 12)
 
         self.product_index_label = QLabel("Product Index:")
         self.product_index_value = QLabel("")
@@ -149,11 +56,11 @@ class PageRankNibbleApp(QMainWindow):
 
         # Apply font to labels and values
         for label in [self.product_index_label, self.description_label, self.category_label]:
-            label.setFont(label_font)
+            label.setFont(self.label_font)
             label.setStyleSheet("color: rgb(255, 255, 153); padding: 5px;")
 
         for value in [self.product_index_value, self.description_value, self.category_value]:
-            value.setFont(value_font)
+            value.setFont(self.value_font)
             value.setStyleSheet("""
                 color: #555555;
                 background-color: #f0f0f0;
@@ -167,9 +74,8 @@ class PageRankNibbleApp(QMainWindow):
         self.info_form_layout.addRow(self.category_label, self.category_value)
 
         self.top_right_group_box_layout.addLayout(self.info_form_layout)
-        self.main_layout.addWidget(self.top_right_group_box, 0, 1)
 
-        # Description and Categories Table at bottom left
+    def set_bottom_left_group_box(self):
         self.bottom_left_group_box = CustomGroupBox("Product Descriptions and Categories")
         self.bottom_left_group_box_layout = QVBoxLayout()
         self.bottom_left_group_box.setLayout(self.bottom_left_group_box_layout)
@@ -202,12 +108,9 @@ class PageRankNibbleApp(QMainWindow):
         self.setup_table_widget()
         self.bottom_left_group_box_layout.addWidget(self.table_widget)
 
-        self.main_layout.addWidget(self.bottom_left_group_box, 1, 0)
-        
-        # Cluster Graph at bottom right
-        # Create the label and combo box for node count
+    def set_bottom_right_group_box(self):
         self.node_count_label = QLabel("Number of cluster nodes:")
-        self.node_count_label.setFont(label_font)
+        self.node_count_label.setFont(self.label_font)
         self.node_count_label.setStyleSheet("color: rgb(255, 255, 153); padding: 5px;")
 
         self.node_count_combo = QComboBox()
@@ -249,6 +152,51 @@ class PageRankNibbleApp(QMainWindow):
         self.plot_widget.autoRange()
 
         self.bottom_right_group_box.setLayout(self.bottom_right_group_box_layout)
+        
+    def __init__(self, graph_path="graph.pkl", dict_path="products_dict.pkl", **client_params):
+        super().__init__()
+        # Load the graph
+        self.graph = load_graph(graph_path)
+        # Initialize data
+        with open(dict_path, 'rb') as f:
+            data = pickle.load(f)
+            self.id_to_index = data['id_to_index']
+            self.index_to_id = data['index_to_id']
+        self.client = clickhouse_connect.get_client(
+            host=client_params["host"], port=client_params["port"],
+            username=client_params["user"], password=client_params["psw"],
+            database=client_params["database"]
+        )
+        self.table_name = client_params["table_name"]
+        self.setWindowTitle("PageRank Nibble Interface")
+        # Set initial size of the window
+        self.resize(1200, 800)
+        # Set application-wide font and background color
+        palette = QPalette()
+        palette.setColor(QPalette.Background, QColor("#001f3f"))  # Deep blue color
+        self.setPalette(palette)
+        QApplication.setStyle("Fusion")
+
+        # Main widget and layout
+        self.main_widget = QWidget()
+        self.setCentralWidget(self.main_widget)
+        self.main_layout = QGridLayout()
+        self.main_widget.setLayout(self.main_layout)
+
+        # Text box and button in a group box at top left
+        self.set_top_left_group_box()
+        self.main_layout.addWidget(self.top_left_group_box, 0, 0)
+
+        # Product Info Card at top right
+        self.set_top_right_group_box()
+        self.main_layout.addWidget(self.top_right_group_box, 0, 1)
+
+        # Description and Categories Table at bottom left
+        self.set_bottom_left_group_box()
+        self.main_layout.addWidget(self.bottom_left_group_box, 1, 0)
+        
+        # Cluster Graph at bottom right
+        self.set_bottom_right_group_box()
         self.main_layout.addWidget(self.bottom_right_group_box, 1, 1)
 
         self.main_layout.setColumnStretch(0, 1)
