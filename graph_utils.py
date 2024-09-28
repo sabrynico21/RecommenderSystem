@@ -50,7 +50,7 @@ def create_graph(edge_weights, t_min, t_max):
     current_index = 0
 
     for edge, weight in edge_weights.items():
-        if weight >= t_min and weight < t_max:
+        if weight >= t_min: #and weight < t_max:
             product_i, product_j = edge
 
             for p in [product_i, product_j]:
@@ -245,8 +245,6 @@ def metric_calculation(graph, original_cluster, reduced_cluster):
     accuracy = []
     cluster_ratio = []
     for or_cluster, red_cluster in zip(original_cluster, reduced_cluster):
-        #or_cluster = or_cluster[:min(50, len(or_cluster))]
-        #red_cluster = red_cluster[:min(50, len(red_cluster))]
         den = num = 0
         for u, v in combinations(or_cluster, 2):
             if graph.has_edge(u, v):
@@ -256,37 +254,63 @@ def metric_calculation(graph, original_cluster, reduced_cluster):
                     num+= 1
         if den != 0:
             result.append(num / den)
-
+        print("or", len(or_cluster))
         count = sum(1 for elem in red_cluster if elem in or_cluster)
         accuracy.append(count / len(or_cluster))
         cluster_ratio.append(len(red_cluster) / len(or_cluster))
     return result, accuracy, cluster_ratio
 
-def validation(graph, reduced_graph, num_nodes, mode):
+def sample_nodes_within_degree_range(graph, degree_min, degree_max, x):
+    eligible_nodes = [node for node, degree in graph.degree() if degree_min < degree <= degree_max]
+    # Step 2: If fewer than x nodes match, adjust x to avoid an error
+    if len(eligible_nodes) < x:
+        print(f"Warning: Only {len(eligible_nodes)} nodes available within the degree range.")
+        x = len(eligible_nodes)
     random.seed(42)
-    selected_nodes = random.sample(list(graph.nodes()), num_nodes)
-    #selected_nodes = [552, 2017]
-    print(selected_nodes)
-    final_results = []
-    final_accuracy = []
-    accuracy_dev = []
-    dev = []
-    final_cluster_ratio = []
-    cluster_ratio_dev = []
-    epsilon_values = [0.0001, 0.00008, 0.00005, 0.00002] #unw
-    #epsilon_values = [0.03, 0.02, 0.015, 0.01] #w
-    for epsilon in epsilon_values:
-        original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes, mode, epsilon) 
-        result, accuracy, cluster_ratio = metric_calculation(graph, original_cluster, reduced_cluster)
-    
-        dev.append(np.std(result, ddof=0) if (len(result)<=1) else np.std(result, ddof=1))
-        accuracy_dev.append(np.std(accuracy, ddof=0) if (len(accuracy)<=1) else np.std(accuracy, ddof=1))
-        cluster_ratio_dev.append(np.std(cluster_ratio, ddof=0) if (len(cluster_ratio)<=1) else np.std(cluster_ratio, ddof=1))
-        final_results.append(np.mean(result))
-        final_accuracy.append(np.mean(accuracy))
-        final_cluster_ratio.append(np.mean(cluster_ratio))
-        print("done")
-    return dev, final_results, epsilon_values, final_accuracy, accuracy_dev, final_cluster_ratio, cluster_ratio_dev
+    sampled_nodes = random.sample(eligible_nodes, x)
+    return sampled_nodes
+
+def validation(graph, reduced_graph, num_nodes, mode):
+    #random.seed(42)
+    #selected_nodes = random.sample(list(graph.nodes()), num_nodes)
+    degree_min = [0, 10, 100, 1000]
+    degree_max = [10, 100, 1000, float('inf')]
+    for min, max in zip(degree_min, degree_max):
+        selected_nodes = sample_nodes_within_degree_range(graph, min, max, num_nodes /len(min) )
+        print(selected_nodes)
+        print("range: ", min, " - ", max)
+        final_results = []
+        final_accuracy = []
+        accuracy_dev = []
+        dev = []
+        final_cluster_ratio = []
+        cluster_ratio_dev = []
+        #epsilon_values = [0.0001, 0.00008, 0.00005, 0.00002] #unw
+        epsilon_values = [0.03, 0.02, 0.015, 0.01] #w
+        for epsilon in epsilon_values:
+            print(epsilon)
+            original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes, mode, epsilon) 
+            result, accuracy, cluster_ratio = metric_calculation(graph, original_cluster, reduced_cluster)
+        
+            dev.append(np.std(result, ddof=0) if (len(result)<=1) else np.std(result, ddof=1))
+            accuracy_dev.append(np.std(accuracy, ddof=0) if (len(accuracy)<=1) else np.std(accuracy, ddof=1))
+            cluster_ratio_dev.append(np.std(cluster_ratio, ddof=0) if (len(cluster_ratio)<=1) else np.std(cluster_ratio, ddof=1))
+            final_results.append(np.mean(result))
+            final_accuracy.append(np.mean(accuracy))
+            final_cluster_ratio.append(np.mean(cluster_ratio))
+
+        with open('unweighted_metrics.txt', 'a') as f:
+        #with open('weighted_metrics.txt', 'a') as f:
+            f.write(f"range: {min} - {max}\n")
+            f.write(f"std_devs: {dev}\n")
+            f.write(f"metric_values: {final_results}\n")
+            f.write(f"epsilon_values: {epsilon_values}\n")
+            f.write(f"accuracy: {final_accuracy}\n")
+            f.write(f"accuracy_dev: {accuracy_dev}\n")
+            f.write(f"cluster_ratio: {final_cluster_ratio}\n")
+            f.write(f"cluster_ratio_dev: {cluster_ratio_dev}\n")
+        print(final_results)
+    return
 
 def metrics_plot_with_std_devs(unweighted_metric_values, weighted_metric_values, epsilon_values, 
                                unweighted_std_devs, weighted_std_devs):

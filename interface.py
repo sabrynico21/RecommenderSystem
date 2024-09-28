@@ -124,7 +124,8 @@ class PageRankNibbleApp(QMainWindow):
             }
         """)
         self.node_count_combo.addItems(['5', '10', '15', '20', '25', '30'])
-        self.node_count_combo.currentIndexChanged.connect(self.run_page_rank_nibble)
+        self.node_count_combo.setCurrentText('30') 
+        self.node_count_combo.currentIndexChanged.connect(self.update_cluster_informations)
 
         # Create a horizontal layout to hold the label and combo box
         h_layout = QHBoxLayout()
@@ -202,26 +203,35 @@ class PageRankNibbleApp(QMainWindow):
         self.main_layout.setColumnStretch(0, 1)
         self.main_layout.setColumnStretch(1, 1)
 
+    def display_cluster_informations(self, cluster):
+        num_nodes = int(self.node_count_combo.currentText())
+        cluster = cluster[ : min(num_nodes, len(cluster))]
+        desc = self.get_cluster_desc(cluster)
+        cluster_graph = self.get_cluster_graph(cluster)
+        self.display_graph(cluster_graph)
+        self.display_descriptions(desc)
+        return desc
+    
+    def update_cluster_informations(self):
+        if not hasattr(self, 'cluster') or len(self.cluster) == 0:
+            return 
+        self.display_cluster_informations(self.cluster)
+    
     def run_page_rank_nibble(self):
         product_id = self.product_id_entry.text()
-
         if not product_id:
-            QMessageBox.warning(self, "Input Error", "Please enter a product ID.")
+            QMessageBox.warning(self, "Input Error", "Please enter a valid product ID.")
             return
 
         n = self.graph.number_of_nodes()
         phi = 0.1
         beta = 0.9
-        epsilon = 2e-05
-
+        #epsilon = 2e-05
+        epsilon = 0.0003
         try:
-            seed, cluster = page_rank_nibble(self.graph, n, phi, beta, epsilon, "unweighted", self.id_to_index[product_id])
-            num_nodes = int(self.node_count_combo.currentText())
-            cluster = cluster[ : min(num_nodes, len(cluster))]
-            desc = self.get_cluster_desc(cluster)
-            cluster_graph = self.get_cluster_graph(cluster)
-            self.display_graph(cluster_graph)
-            self.display_descriptions(desc)
+            seed, cluster = page_rank_nibble(self.graph, n, phi, beta, epsilon, "weighted", self.id_to_index[product_id])
+            self.cluster = cluster
+            desc = self.display_cluster_informations(self.cluster)
             self.display_product_info(self.id_to_index[product_id], desc[product_id])
 
         except Exception as e:
@@ -250,7 +260,7 @@ class PageRankNibbleApp(QMainWindow):
         self.category_value.setText(product_info[1])
 
     def display_descriptions(self, descriptions):
-        self.table_widget.setRowCount(len(descriptions)+1)
+        self.table_widget.setRowCount(len(descriptions))
         for row, (product, (descr, cat)) in enumerate(descriptions.items()):
             index_item = QTableWidgetItem(str(product))
             descr_item = QTableWidgetItem(descr)

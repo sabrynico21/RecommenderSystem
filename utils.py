@@ -91,9 +91,11 @@ def page_rank_nibble(graph, n, phi, beta, epsilon, mode, seed):
     supp = np.sum(r > 0)
     #print("sup", supp)
     covo = calculate_conductance(graph, r_s, supp)
+    
     supp = np.sum(r > 0)
     #print("sup", supp)
     co = covo[0, :]
+    print(co[r_s])
     plt.plot(range(0, n), co[r_s])
     plt.xlabel('Node')
     plt.ylabel('Conductance')
