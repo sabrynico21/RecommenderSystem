@@ -106,8 +106,7 @@ def main():
 
     print("Number of nodes:", reduced_graph.number_of_nodes())
     print("Number of edges:", reduced_graph.number_of_edges())
-
-    validation(product_graph, reduced_graph, 2, args.mode)
+    validation(product_graph, reduced_graph, 1000, args.mode)
 
     # with open('unweighted_metrics.txt', 'w') as f:
     # #with open('weighted_metrics.txt', 'w') as f:
