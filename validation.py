@@ -80,7 +80,8 @@ def main():
             edge_weights = pickle.load(file)
         
         #display_edge_weight_distribution(edge_weights)
-        #fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
+        fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
+        exit(0)
         product_graph, product_to_index, index_to_product = create_graph(edge_weights, int(args.t_min), int(args.t_max))
 
         # with open("graph.pkl", "wb") as f:

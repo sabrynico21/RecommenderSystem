@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QLineEdit, QPushButton, QGroupBox)
 from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt, QSize 
+from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal
 
 class CustomLineEdit(QLineEdit):
     def __init__(self, placeholder_text="", *args, **kwargs):
@@ -51,3 +51,15 @@ class CustomGroupBox(QGroupBox):
                 padding: 0 3px;
             }
         """)
+
+class WorkerThread(QThread):
+    finished = pyqtSignal(dict, object)
+    def __init__(self, app_class, calculation):
+        super().__init__()
+        self.app_class = app_class
+        self.calculation = calculation
+    def run(self):
+        if self.calculation == True:
+            self.app_class.run_page_rank_nibble()  
+        desc, cluster_graph = self.app_class.calculate_cluster_informations(self.app_class.cluster)
+        self.finished.emit(desc, cluster_graph)

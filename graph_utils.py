@@ -130,8 +130,8 @@ def display_edge_weight_distribution(edge_weights):
     plt.show()
 
 def fit_powerlaw_on_edge_distribution_CDDF(edge_weights):
-
-    weights = [ weight for _, weight in edge_weights.items()]
+    # Get weights and counts
+    weights = [weight for _, weight in edge_weights.items()]
     weight_counts = Counter(weights)
     sorted_weight_counts = OrderedDict(sorted(weight_counts.items()))
 
@@ -141,27 +141,33 @@ def fit_powerlaw_on_edge_distribution_CDDF(edge_weights):
     # Calculate empirical CCDF
     empirical_ccdf = 1.0 - np.cumsum(counts) / np.sum(counts)
 
-    # Fit the power law
-    fit = powerlaw.Fit(weights, discrete=True)
+    # Expand weights based on their counts (for correct fitting)
+    expanded_weights = np.repeat(weights, counts)
+    print(len(expanded_weights))
+    # Fit the power law on the expanded weights
+    fit = powerlaw.Fit(expanded_weights, discrete=True)
     alpha = fit.power_law.alpha
     xmin = fit.power_law.xmin
 
     print(f'Power law exponent: {alpha}')
     print(f'xmin: {xmin}')
 
-    plt.figure(figsize=(10, 6))
+    # Plot the CCDF and the power law fit
+    plt.figure(figsize=(14, 6))
+
+    # Power law fit CCDF (plot only for x >= xmin)
     fit.power_law.plot_ccdf(color='r', linestyle='--', label='Power law fit')
-    plt.step(weights, empirical_ccdf, where='post', marker='o', linestyle='-', color='b', label='Empirical data')
+
+    # Plot empirical CCDF
+    plt.step(weights, empirical_ccdf, where='post', marker='o', markerfacecolor='yellow',linestyle='-', color='b', label='Empirical data')
 
     plt.xscale('log')
     plt.yscale('log')
-
     plt.xlabel('Weights')
     plt.ylabel('CCDF')
-    plt.title('Power Law Fit on Edge Weight Distribution (Log-Log Scale)')
+    plt.title('Power Law Fit on Edge Weight Distribution (Log-Log Scale)', fontsize=16, fontweight='bold', pad=20)
     plt.legend()
     plt.grid(True)
-
     plt.savefig('power_law_fit.png')
     plt.show()
     
