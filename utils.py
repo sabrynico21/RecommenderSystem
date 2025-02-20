@@ -112,7 +112,6 @@ def page_rank_nibble(graph, n, phi, beta, epsilon, mode, seed):
     m = sum(dict(graph.degree()).values()) / 2
     B = int(np.floor(np.log(m)))
     b = random.choice(range(1, B+1))
-
     rq = approximate_personalized_page_rank(graph, personalization_vector, beta, epsilon, mode)
     
     #print("rq:", rq)

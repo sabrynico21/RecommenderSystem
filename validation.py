@@ -80,8 +80,7 @@ def main():
             edge_weights = pickle.load(file)
         
         #display_edge_weight_distribution(edge_weights)
-        fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
-        exit(0)
+        #fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
         product_graph, product_to_index, index_to_product = create_graph(edge_weights, int(args.t_min), int(args.t_max))
 
         # with open("graph.pkl", "wb") as f:
@@ -107,8 +106,8 @@ def main():
 
     print("Number of nodes:", reduced_graph.number_of_nodes())
     print("Number of edges:", reduced_graph.number_of_edges())
+    #validation(product_graph, reduced_graph, 1000, args.mode)
     validation(product_graph, reduced_graph, 1000, args.mode)
-
     # with open('unweighted_metrics.txt', 'w') as f:
     # #with open('weighted_metrics.txt', 'w') as f:
     #     f.write(f"t_min: {args.t_min}\n")

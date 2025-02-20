@@ -249,6 +249,7 @@ class PageRankNibbleApp(QMainWindow):
                     del value_widget.overlay
 
     def loading_cluster_informations(self, calculation=True):
+        self.table_widget.clearSelection()
         if calculation == False:
             if not hasattr(self, 'cluster') or len(self.cluster) == 0:
                 return
@@ -327,13 +328,25 @@ class PageRankNibbleApp(QMainWindow):
 
     def get_cluster_desc(self, cluster):
         ids = [self.index_to_id[index] for index in cluster]
-        ids = ', '.join(map(str, ids))
-        query = f"SELECT DISTINCT descr_prod, descr_rep FROM {self.table_name} WHERE cod_prod IN ({ids});"
-        result = self.client.query(query)
+        #ids = ', '.join(map(str, ids))
+        #query = f"SELECT DISTINCT descr_prod, descr_rep FROM {self.table_name} WHERE cod_prod IN ({ids});"
+        #result = self.client.query(query)
+        query_create_temp = """CREATE TEMPORARY TABLE temp_ids (cod_prod String, position INT);"""
+        self.client.query(query_create_temp)
+        query_insert_temp = f"""INSERT INTO temp_ids (cod_prod, position) VALUES{", ".join([f"({id}, {index})" for index, id in enumerate(ids)])};"""
+        self.client.query(query_insert_temp)
+        query_main = f"""SELECT DISTINCT t.descr_prod, t.descr_rep FROM {self.table_name} t JOIN temp_ids temp ON t.cod_prod = temp.cod_prod ORDER BY temp.position;"""
+        result = self.client.query(query_main)
+        query_drop_temp = "DROP TEMPORARY TABLE temp_ids;"
+        self.client.query(query_drop_temp)
         desc = {}
         for row in result.result_rows:
             row_split = row[0].split()
             des = ' '.join(row_split[1:])
+            words = des.split()
+            if '.' not in words[0]:
+                words[0] = '*' * len(words[0])
+            des = ' '.join(words)
             desc[row_split[0]] = (des, row[1])
         return desc
 

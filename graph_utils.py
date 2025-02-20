@@ -156,7 +156,7 @@ def fit_powerlaw_on_edge_distribution_CDDF(edge_weights):
     plt.figure(figsize=(14, 6))
 
     # Power law fit CCDF (plot only for x >= xmin)
-    fit.power_law.plot_ccdf(color='r', linestyle='--', label='Power law fit')
+    fit.power_law.plot_ccdf(color='r', linestyle='--', label=f'Power law fit (xmin={xmin:.2f}, alpha={alpha:.2f})')
 
     # Plot empirical CCDF
     plt.step(weights, empirical_ccdf, where='post', marker='o', markerfacecolor='yellow',linestyle='-', color='b', label='Empirical data')
@@ -274,7 +274,7 @@ def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, mode):
         eligible_nodes = [node for node, degree in graph.degree() if degree_min < degree <= degree_max]
     # Step 2: If fewer than x nodes match, adjust x to avoid an error
     if len(eligible_nodes) < x:
-        with open('weighted_metrics.txt', 'a') as f:
+        with open('w_testing.txt', 'a') as f:
             f.write(f"Warning: Only {len(eligible_nodes)} nodes available within the degree range.")
         x = len(eligible_nodes)
     random.seed(42)
@@ -282,59 +282,69 @@ def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, mode):
     return sampled_nodes
 
 def validation(graph, reduced_graph, num_nodes, mode):
-    #random.seed(42)
-    #selected_nodes = random.sample(list(graph.nodes()), num_nodes)
-    degree_min = [1000]  #, 10, 100, 1000]
-    degree_max = [float('inf')] #, 100, 1000, float('inf')]
-    #degree_min = [0, 10]
-    #degree_max = [10, float('inf')]
+    degree_min = [0]  #, 10, 100, 1000]
+    degree_max = [50] #, 100, 1000, float('inf')]
     for min, max in zip(degree_min, degree_max):
         selected_nodes = sample_nodes_within_degree_range(graph, min, max, int(250), mode) #num_nodes /len(degree_min)
+        epsilon_values = [8e-05, 7e-05, 6e-05, 5e-05]
         print(selected_nodes)
         print("range: ", min, " - ", max)
-        final_results = []
-        final_accuracy = []
-        accuracy_dev = []
-        dev = []
-        final_cluster_ratio = []
-        cluster_ratio_dev = []
+        with open('prova.txt', 'a') as f:
+            f.write(f"range: {min} - {max}\n")
+            f.write(f"epsilon_values: {epsilon_values}\n")
         single_node_cluster = []
-        cluster_len_mean = []
-        cluster_len_dev = []
-        #epsilon_values = [0.0001, 0.00008, 0.00005, 0.00002] #unw
-        #epsilon_values = [0.00005, 0.00001, 0.000005, 0.000001] #unw
-        #epsilon_values = [0.001, 0.0007, 0.0005, 0.0003] #w
-        epsilon_values = [0.05, 0.03, 0.01, 0.008] #w
         for epsilon in epsilon_values:
             print(epsilon)
             original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes, mode, epsilon) 
-            result, accuracy, cluster_ratio = metric_calculation(graph, original_cluster, reduced_cluster)
-            single_node_cluster.append(len(original_cluster) - len(result))
-            dev.append(np.std(result, ddof=0) if (len(result)<=1) else np.std(result, ddof=1))
-            accuracy_dev.append(np.std(accuracy, ddof=0) if (len(accuracy)<=1) else np.std(accuracy, ddof=1))
-            cluster_ratio_dev.append(np.std(cluster_ratio, ddof=0) if (len(cluster_ratio)<=1) else np.std(cluster_ratio, ddof=1))
-            final_results.append(np.mean(result))
-            final_accuracy.append(np.mean(accuracy))
-            final_cluster_ratio.append(np.mean(cluster_ratio))
+            result, sensitivity, cluster_ratio = metric_calculation(graph, original_cluster, reduced_cluster)
+            single_node_cluster = len(original_cluster) - len(result)
+            #dev.append(np.std(result, ddof=0) if (len(result)<=1) else np.std(result, ddof=1))
+            #accuracy_dev.append(np.std(accuracy, ddof=0) if (len(accuracy)<=1) else np.std(accuracy, ddof=1))
+            #cluster_ratio_dev.append(np.std(cluster_ratio, ddof=0) if (len(cluster_ratio)<=1) else np.std(cluster_ratio, ddof=1))
+            #final_results.append(np.mean(result))
+            #final_accuracy.append(np.mean(accuracy))
+            #final_cluster_ratio.append(np.mean(cluster_ratio))
             len_cluster = [len(cluster) for cluster in original_cluster]
-            cluster_len_mean.append(np.mean(len_cluster))
-            cluster_len_dev.append(np.std(len_cluster))
-            
-            print(final_results)
-            print(single_node_cluster)
-        #with open('unweighted_metrics.txt', 'a') as f:
-        with open('weighted_metrics.txt', 'a') as f:
-            f.write(f"range: {min} - {max}\n")
-            f.write(f"std_devs: {dev}\n")
-            f.write(f"metric_values: {final_results}\n")
-            f.write(f"epsilon_values: {epsilon_values}\n")
-            f.write(f"accuracy: {final_accuracy}\n")
-            f.write(f"accuracy_dev: {accuracy_dev}\n")
-            f.write(f"cluster_ratio: {final_cluster_ratio}\n")
-            f.write(f"cluster_ratio_dev: {cluster_ratio_dev}\n")
+            #cluster_len_mean.append(np.mean(len_cluster))
+            #cluster_len_dev.append(np.std(len_cluster))
+            with open('prova.txt', 'a') as f:
+                f.write(f"CCR: {result}\n")
+                f.write(f"sensitivity: {sensitivity}\n")
+                f.write(f"lenghts: {len_cluster}\n")
+                f.write(f"CLR: {cluster_ratio}\n")
+                f.write(f"single_node_cluster: {single_node_cluster}\n")
+        # #with open('unweighted_metrics.txt', 'a') as f:
+        # with open('test_unw_metrics.txt', 'a') as f:
+        #     f.write(f"std_devs: {dev}\n")
+        #     f.write(f"metric_values: {final_results}\n")
+        #     f.write(f"epsilon_values: {epsilon_values}\n")
+        #     f.write(f"accuracy: {final_accuracy}\n")
+        #     f.write(f"accuracy_dev: {accuracy_dev}\n")
+        #     f.write(f"cluster_ratio: {final_cluster_ratio}\n")
+        #     f.write(f"cluster_ratio_dev: {cluster_ratio_dev}\n")
+        #     f.write(f"single_node_cluster: {single_node_cluster}\n")
+        #     f.write(f"cluster_len_mean: {cluster_len_mean}\n")
+        #     f.write(f"cluster_len_dev: {cluster_len_dev}\n")
+    return
+
+def testing_epsilon(graph, reduced_graph, num_nodes, mode):
+    selected_nodes = random.sample(list(graph.nodes()), num_nodes)
+    epsilon_values = [0.0001, 8e-05, 5e-05, 2e-05]
+    with open('w_testing.txt', 'a') as f:
+        f.write(f"epsilon_values: {epsilon_values}\n")
+    for epsilon in epsilon_values:
+        print(epsilon)
+        original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes, mode, epsilon) 
+        result, sensitivity, cluster_ratio = metric_calculation(graph, original_cluster, reduced_cluster)
+        single_node_cluster = len(original_cluster) - len(result)
+        len_clusters = [len(cluster) for cluster in original_cluster]
+
+        with open('w_testing.txt', 'a') as f:
+            f.write(f"CCR: {result}\n")
+            f.write(f"sensitivity: {sensitivity}\n")
+            f.write(f"lenghts: {len_clusters}\n")
+            f.write(f"CLR: {cluster_ratio}\n")
             f.write(f"single_node_cluster: {single_node_cluster}\n")
-            f.write(f"cluster_len_mean: {cluster_len_mean}\n")
-            f.write(f"cluster_len_dev: {cluster_len_dev}\n")
     return
 
 def metrics_plot_with_std_devs(unweighted_metric_values, weighted_metric_values, epsilon_values, 
