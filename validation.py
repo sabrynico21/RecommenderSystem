@@ -1,6 +1,6 @@
 import pickle
 import argparse
-#import clickhouse_connect
+import clickhouse_connect
 import os
 from graph_utils import *
 import collections
@@ -57,12 +57,12 @@ def main():
 
     parser = argparse.ArgumentParser(description='Insert thresholds for the graph cluster algorithm')
     parser.add_argument('--load', default= "True", help='Specify if load the graph or create a new one')
-    parser.add_argument('--t_min', help='Specify the min threshold')
-    parser.add_argument('--t_max', help='Specify the max threshold')
-    parser.add_argument('--mode', choices=["weighted","unweighted"], help='Specify whether to use weighted or unweighted graph')
+    parser.add_argument('--t_min', default=2, help='Specify the min threshold')
+    parser.add_argument('--t_max', default=0, help='Specify the max threshold')
+    parser.add_argument('--mode', default="weighted", choices=["weighted","unweighted"], help='Specify whether to use weighted or unweighted graph')
     parser.add_argument('--seed', help='Specify id of the seed node')
     args = parser.parse_args()
-
+    
     if args.load == "False":
         # host = 'localhost'
         # port = 8123
@@ -77,37 +77,48 @@ def main():
         #     pickle.dump(edge_weights, file)
     
         with open('edge_weights.pkl', 'rb') as file:
-            edge_weights = pickle.load(file)
+           edge_weights = pickle.load(file)
         
-        #display_edge_weight_distribution(edge_weights)
-        #fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
+        display_edge_weight_distribution(edge_weights)
+        fit_powerlaw_on_edge_distribution_CDDF(edge_weights)
         product_graph, product_to_index, index_to_product = create_graph(edge_weights, int(args.t_min), int(args.t_max))
 
-        # with open("graph.pkl", "wb") as f:
-        #     pickle.dump(product_graph, f)
+        with open("graph.pkl", "wb") as f:
+            pickle.dump(product_graph, f)
         
-        # with open('products_dict.pkl', 'wb') as f:
-        #     pickle.dump({'id_to_index': product_to_index, 'index_to_id': index_to_product}, f)
+        with open('products_dict.pkl', 'wb') as f:
+            pickle.dump({'id_to_index': product_to_index, 'index_to_id': index_to_product}, f)
     
     else:
         file_path = "graph.pkl"
         product_graph = load_graph(file_path)
-    
-    # with open("products_dict.pkl", 'rb') as f:
-    #     data = pickle.load(f)
-    #     product_to_index = data['id_to_index']
-    #     index_to_product = data['index_to_id']
-             
+
+    with open("products_dict.pkl", 'rb') as f:
+        data = pickle.load(f)
+        product_to_index = data['id_to_index']
+        index_to_product = data['index_to_id']
+    # or_same_cluster = 0
+    # re_same_cluster = 0
+    # total_jaccard_sim = []
+    # for i in range(1):
+    #     red_graph, product1, product2 = new_graph_removing_receipts(product_graph, index_to_product, client)
+    #     print("Number of nodes:", product_graph.number_of_edges())
+    #     print("Number of edges:", red_graph.number_of_edges())
+    #     or_count, red_count, jaccard_similarity = compare_clusters(product_graph, red_graph,[product_to_index[product1], product_to_index[product2]], args.mode, 0.01)
+    #     or_same_cluster+= or_count
+    #     re_same_cluster+= red_count
+    #     total_jaccard_sim.append(jaccard_similarity)
+    #     print(or_count, red_count, jaccard_similarity)
+
     print("Number of nodes:", product_graph.number_of_nodes())
-    print("Number of edges:", product_graph.number_of_edges())
-    
+    print("Number of edges:", product_graph.number_of_edges())  
     percent = 30
     reduced_graph = remove_random_edges(product_graph, percent)
 
     print("Number of nodes:", reduced_graph.number_of_nodes())
     print("Number of edges:", reduced_graph.number_of_edges())
     #validation(product_graph, reduced_graph, 1000, args.mode)
-    validation(product_graph, reduced_graph, 1000, args.mode)
+    validation(product_graph, reduced_graph, 100, args.mode)
     # with open('unweighted_metrics.txt', 'w') as f:
     # #with open('weighted_metrics.txt', 'w') as f:
     #     f.write(f"t_min: {args.t_min}\n")

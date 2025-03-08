@@ -95,11 +95,20 @@ def calculate_conductance(graph, pr, supp, weighted=True):
     conductance = cut / vol
     return np.vstack((conductance, vol))
 
-def page_rank_nibble(graph, n, phi, beta, epsilon, mode, seed):
+def compute_epsilon(graph, x, c=0.00001):
+    degree = graph.degree[x]
+    m = graph.number_of_edges()
+    epsilon = c * np.log(degree**2 + 2) / np.log(m + 1)
+    return epsilon
+
+def page_rank_nibble(graph, beta, c, mode, seed):
+    n = graph.number_of_nodes()
     personalization_vector = np.zeros(n)
     if seed == -1:
         x = random.choice(range(n))
     else:
+        if not graph.has_node(seed):
+            return (seed, [])
         x = seed
     if mode=="unweighted":
         personalization_vector[x] = 1
@@ -112,6 +121,8 @@ def page_rank_nibble(graph, n, phi, beta, epsilon, mode, seed):
     m = sum(dict(graph.degree()).values()) / 2
     B = int(np.floor(np.log(m)))
     b = random.choice(range(1, B+1))
+    epsilon = compute_epsilon(graph, x, c)
+    print("epsilon:", epsilon)
     rq = approximate_personalized_page_rank(graph, personalization_vector, beta, epsilon, mode)
     
     #print("rq:", rq)

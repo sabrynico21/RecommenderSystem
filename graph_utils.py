@@ -10,7 +10,7 @@ from utils import page_rank_nibble
 from collections import Counter, OrderedDict
 from itertools import combinations
 from collections import defaultdict
-random.seed(42)
+#random.seed(42)
 
 def load_graph(file_path):
     if os.path.exists(file_path):
@@ -21,6 +21,32 @@ def load_graph(file_path):
         print(f"File {file_path} does not exist.")
         return
     return product_graph
+
+def create_graph_subtracting_edgeweights(G, weights_to_remove):
+    new_G = nx.Graph() 
+    new_G.add_nodes_from(G.nodes(data=True))
+    for u, v, data in G.edges(data=True):
+        new_weight = data.get('weight', 0) - weights_to_remove[(u,v)]
+        if new_weight > 1:
+            new_G.add_edge(u, v, weight=new_weight)
+    return new_G
+
+def new_graph_removing_receipts(G, dict, client):
+    valid_edges = [(dict[u], dict[v], w) for u, v, w in G.edges(data="weight") if 100 <= w <= 200] #Choose a specific pair of products that were sold together
+    random_edge = list(random.choice(valid_edges) if valid_edges else None)
+    #query=f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM dati_scontrini GROUP BY id_sc HAVING match(products, '(^|\\s){random_edge[0]}(\\s|$)') AND match(products, '(^|\\s){random_edge[1]}(\\s|$)');"
+    query = f"SELECT * FROM grouped_products WHERE match(products, '(^|\\s){random_edge[0]}(\\s|$)') AND match(products, '(^|\\s){random_edge[1]}(\\s|$)');"
+    result = client.query(query)
+    weights_to_remove = defaultdict(int)
+    for row in result.result_rows:
+        products = list(set(row[1].split(' ')))
+        for i in range(len(products)):
+            for j in range(i + 1, len(products)):
+                edge = (products[i], products[j])
+                weights_to_remove[edge] += 1
+    new_graph = create_graph_subtracting_edgeweights(G, weights_to_remove)
+    return new_graph, random_edge[0], random_edge[1]
+
 
 def calulate_edge_weights(client, table_name):
     # query_avg_products = f"WITH product_counts AS (SELECT id_sc, length(groupArray(cod_prod)) AS num_products FROM {table_name} GROUP BY id_sc ) SELECT AVG(num_products) AS avg_products_per_id_sc FROM  product_counts;"
@@ -35,7 +61,7 @@ def calulate_edge_weights(client, table_name):
 
     edge_weights = defaultdict(int)
     for row in result.result_rows:
-        products = row[1].split(' ')
+        products = list(set(row[1].split(' ')))
         #print(products)
         for i in range(len(products)):
             for j in range(i + 1, len(products)):
@@ -51,7 +77,7 @@ def create_graph(edge_weights, t_min, t_max):
     current_index = 0
 
     for edge, weight in edge_weights.items():
-        if weight >= t_min and weight < t_max:
+        if weight >= t_min: #and weight < t_max:
             product_i, product_j = edge
 
             for p in [product_i, product_j]:
@@ -233,24 +259,27 @@ def remove_random_edges(graph, percentage):
     graph_copy.remove_edges_from(edges_to_remove)    
     return graph_copy
 
-def calculate_clusters(graph, reduced_graph, selected_nodes, mode, epsilon):
-    n = graph.number_of_nodes()
-    phi = 0.1
+def calculate_clusters(graph, reduced_graph, selected_nodes, mode, c):
+    #n = graph.number_of_nodes()
     beta = 0.9
+    c = 0.00001
     #epsilon = 2e-05
     original_cluster = []
     reduced_cluster = []
     for node in selected_nodes:
-        seed, cluster = page_rank_nibble(graph, n, phi, beta, epsilon, mode, node)
+        #print(node)
+        seed, cluster = page_rank_nibble(graph, beta, c, mode, node)
         original_cluster.append(cluster)
-        seed, cluster = page_rank_nibble(reduced_graph, n, phi, beta, epsilon, mode, node)
+        seed, cluster = page_rank_nibble(reduced_graph, beta, c, mode, node)
         reduced_cluster.append(cluster)
     return original_cluster, reduced_cluster
 
 def metric_calculation(graph, original_cluster, reduced_cluster):
     result = []
-    accuracy = []
-    cluster_ratio = []
+    sensitivity = []
+    precision = []
+    #cluster_ratio = []
+    jaccard_sim = []
     for or_cluster, red_cluster in zip(original_cluster, reduced_cluster):
         den = num = 0
         for u, v in combinations(or_cluster, 2):
@@ -263,9 +292,11 @@ def metric_calculation(graph, original_cluster, reduced_cluster):
             result.append(num / den)
         print("or", len(or_cluster))
         count = sum(1 for elem in red_cluster if elem in or_cluster)
-        accuracy.append(count / len(or_cluster))
-        cluster_ratio.append(len(red_cluster) / len(or_cluster))
-    return result, accuracy, cluster_ratio
+        sensitivity.append(count / len(or_cluster))
+        precision.append(count / len(red_cluster))
+        #cluster_ratio.append(len(red_cluster) / len(or_cluster))
+        jaccard_sim.append(compute_jaccard_sim(or_cluster, red_cluster))
+    return result, sensitivity, precision, jaccard_sim
 
 def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, mode):
     if mode == "weighted":
@@ -281,38 +312,73 @@ def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, mode):
     sampled_nodes = random.sample(eligible_nodes, x)
     return sampled_nodes
 
+def are_present(cluster, products):
+    print("cluster:", cluster)
+    print("products:", products)
+    if products[0] in cluster and products[1] in cluster:
+        return True
+    return False
+    
+def compute_jaccard_sim(list1, list2):
+    set1 = set(list1)
+    set2 = set(list2)
+    intersection = set1 & set2  
+    union = set1 | set2
+    return len(intersection) / len(union) if len(union) > 0 else 0
+
+def compare_clusters(graph, reduced_graph, products, mode, epsilon):
+    or_cluster, red_cluster = calculate_clusters(graph, reduced_graph, [products[0]], mode, epsilon)
+    print("lengths:", len(or_cluster[0]), len(red_cluster[0]))
+    or_count = 0 
+    red_count = 0
+    jaccard_similarity = []
+    for o_c, r_c in zip(or_cluster, red_cluster):
+        if are_present(o_c, products):
+            or_count+=1
+        if are_present(r_c, products):
+            red_count+=1
+        jaccard_similarity.append(compute_jaccard_sim(o_c,r_c))
+    return or_count, red_count, jaccard_similarity
+
+#def test_compute_epsilon(graph, reduced_graph, num_nodes, mode):
+
+
 def validation(graph, reduced_graph, num_nodes, mode):
-    degree_min = [0]  #, 10, 100, 1000]
-    degree_max = [50] #, 100, 1000, float('inf')]
+    degree_min = [0,10, 100, 1000]
+    degree_max = [10, 100, 1000, 10000]
+    c = 0.00001
+    with open('test_epsiloncompute.txt', 'a') as f:
+        f.write(f"constant: {c}\n")
     for min, max in zip(degree_min, degree_max):
-        selected_nodes = sample_nodes_within_degree_range(graph, min, max, int(250), mode) #num_nodes /len(degree_min)
-        epsilon_values = [8e-05, 7e-05, 6e-05, 5e-05]
-        print(selected_nodes)
-        print("range: ", min, " - ", max)
-        with open('prova.txt', 'a') as f:
+        selected_nodes = sample_nodes_within_degree_range(graph, min, max, int(num_nodes /len(degree_min)), mode) 
+        #epsilon_values = [8e-05, 7e-05, 6e-05, 5e-05]
+        #print(selected_nodes)
+        #print("range: ", min, " - ", max)
+        with open('test_epsiloncompute.txt', 'a') as f:
             f.write(f"range: {min} - {max}\n")
-            f.write(f"epsilon_values: {epsilon_values}\n")
+            #f.write(f"epsilon_values: {epsilon_values}\n")
         single_node_cluster = []
-        for epsilon in epsilon_values:
-            print(epsilon)
-            original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes, mode, epsilon) 
-            result, sensitivity, cluster_ratio = metric_calculation(graph, original_cluster, reduced_cluster)
-            single_node_cluster = len(original_cluster) - len(result)
+        #for epsilon in epsilon_values:
+        original_cluster, reduced_cluster = calculate_clusters(graph, reduced_graph, selected_nodes, mode,c) 
+        result, sensitivity, precision, jaccard_sim = metric_calculation(graph, original_cluster, reduced_cluster)
+        single_node_cluster = len(original_cluster) - len(result)
             #dev.append(np.std(result, ddof=0) if (len(result)<=1) else np.std(result, ddof=1))
             #accuracy_dev.append(np.std(accuracy, ddof=0) if (len(accuracy)<=1) else np.std(accuracy, ddof=1))
             #cluster_ratio_dev.append(np.std(cluster_ratio, ddof=0) if (len(cluster_ratio)<=1) else np.std(cluster_ratio, ddof=1))
             #final_results.append(np.mean(result))
             #final_accuracy.append(np.mean(accuracy))
             #final_cluster_ratio.append(np.mean(cluster_ratio))
-            len_cluster = [len(cluster) for cluster in original_cluster]
+        len_cluster = [len(cluster) for cluster in original_cluster]
             #cluster_len_mean.append(np.mean(len_cluster))
             #cluster_len_dev.append(np.std(len_cluster))
-            with open('prova.txt', 'a') as f:
-                f.write(f"CCR: {result}\n")
-                f.write(f"sensitivity: {sensitivity}\n")
-                f.write(f"lenghts: {len_cluster}\n")
-                f.write(f"CLR: {cluster_ratio}\n")
-                f.write(f"single_node_cluster: {single_node_cluster}\n")
+        with open('test_epsiloncompute.txt', 'a') as f:
+            f.write(f"CCR: {result}\n")
+            f.write(f"sensitivity: {sensitivity}\n")
+            f.write(f"precision: {precision}\n")
+            f.write(f"lenghts: {len_cluster}\n")
+            #f.write(f"CLR: {cluster_ratio}\n")
+            f.write(f"single_node_cluster: {single_node_cluster}\n")
+            f.write(f"jaccard_similarity: {jaccard_sim}\n")
         # #with open('unweighted_metrics.txt', 'a') as f:
         # with open('test_unw_metrics.txt', 'a') as f:
         #     f.write(f"std_devs: {dev}\n")
