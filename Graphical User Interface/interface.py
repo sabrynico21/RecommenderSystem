@@ -1,9 +1,10 @@
 import pyqtgraph as pg
 import networkx as nx
-import pickle
 import sys
 import clickhouse_connect
-from utils import page_rank_nibble
+import os
+from src.graph import Graph
+from src.pagerank_nibble import page_rank_nibble
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QFormLayout, QGridLayout,
     QLabel, QMessageBox, QTableWidget, QTableWidgetItem,
@@ -11,9 +12,21 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPalette, QColor, QMovie
-from graph_utils import load_graph
 from interface_utils import *
 from functools import partial
+from dotenv import load_dotenv
+
+def extract_cluster_desc(result):
+        desc = {}
+        for row in result.result_rows:
+            row_split = row[0].split()
+            des = ' '.join(row_split[1:])
+            words = des.split()
+            if '.' not in words[0]:
+                words[0] = '*' * len(words[0])
+            des = ' '.join(words)
+            desc[row_split[0]] = (des, row[1])
+        return desc
 
 class PageRankNibbleApp(QMainWindow):
 
@@ -130,7 +143,8 @@ class PageRankNibbleApp(QMainWindow):
                 width: 20px;  /* Width of the dropdown arrow */
             }
         """)
-        self.node_count_combo.addItems(['5', '10', '15', '20', '25', '30'])
+        #self.node_count_combo.addItems(['5', '10', '15', '20', '25', '30'])
+        self.node_count_combo.addItems(['10', '20', '30', '40', '50'])
         self.node_count_combo.setCurrentText('30') 
         self.node_count_combo.currentIndexChanged.connect(partial(self.loading_cluster_informations, False))
 
@@ -161,15 +175,12 @@ class PageRankNibbleApp(QMainWindow):
 
         self.bottom_right_group_box.setLayout(self.bottom_right_group_box_layout)
         
-    def __init__(self, graph_path="graph.pkl", dict_path="products_dict.pkl", **client_params):
+    def __init__(self, graph_path="graph.pkl", dict_path="products_dict.pkl", t_min=20, t_max = 100, **client_params):
         super().__init__()
         # Load the graph
-        self.graph = load_graph(graph_path)
+        self.graph = Graph.load_graph(graph_path, t_min, t_max)
         # Initialize data
-        with open(dict_path, 'rb') as f:
-            data = pickle.load(f)
-            self.id_to_index = data['id_to_index']
-            self.index_to_id = data['index_to_id']
+        self.graph.load_dicts(dict_path)
         self.client = clickhouse_connect.get_client(
             host=client_params["host"], port=client_params["port"],
             username=client_params["user"], password=client_params["psw"],
@@ -216,6 +227,9 @@ class PageRankNibbleApp(QMainWindow):
 
         self.loadingMovie = QMovie("an.gif")
         self.loadingLabel.setMovie(self.loadingMovie)
+
+    def __getattr__(self, attr):
+        return getattr(self.graph, attr)
 
     def block_plot_widget(self, block=True):
         if block:
@@ -280,7 +294,7 @@ class PageRankNibbleApp(QMainWindow):
         self.display_graph(cluster_graph)
         self.display_descriptions(desc)
         if self.workerThread.calculation == True:
-            self.display_product_info(self.id_to_index[product_id], desc[product_id])
+            self.display_product_info(product_id, desc[product_id] if product_id in desc else None)
         
     def hide_loading_animation(self, loadingLabel):
         loadingLabel.movie().stop()
@@ -302,17 +316,16 @@ class PageRankNibbleApp(QMainWindow):
             return
 
         try:
-            product_index = self.id_to_index[product_id]
+            product_index = self.get_product_to_index(product_id) #id_to_index[product_id]
         except Exception as e:
             QMessageBox.critical(self, "Input Error", f"{str(e)} isn't present in the graph")
             return 
-        n = self.graph.number_of_nodes()
-        phi = 0.1
-        beta = 0.9
-        epsilon = 2e-05
-        #epsilon = 0.0003
+        
+        beta = 0.85
+        #epsilon = 2e-05
+        c = 0.09
         try:
-            seed, cluster = page_rank_nibble(self.graph, n, phi, beta, epsilon, "unweighted", product_index)
+            seed, cluster = page_rank_nibble(self.graph, beta, c, "unweighted", product_index)
         except Exception as e:
             QMessageBox.critical(self, "Page Rank Nibble Error", "Error during the cluster algorithm")
             return
@@ -322,12 +335,12 @@ class PageRankNibbleApp(QMainWindow):
         #self.display_product_info(self.id_to_index[product_id], desc[product_id])
 
     def get_cluster_graph(self, cluster):
-        subgraph = self.graph.subgraph(cluster)
+        subgraph = self.get_subgraph(cluster) #self.graph.subgraph(cluster)
         subgraph = nx.Graph(subgraph)
         return subgraph
 
     def get_cluster_desc(self, cluster):
-        ids = [self.index_to_id[index] for index in cluster]
+        ids = [self.get_index_to_product(index) for index in cluster]
         #ids = ', '.join(map(str, ids))
         #query = f"SELECT DISTINCT descr_prod, descr_rep FROM {self.table_name} WHERE cod_prod IN ({ids});"
         #result = self.client.query(query)
@@ -339,21 +352,22 @@ class PageRankNibbleApp(QMainWindow):
         result = self.client.query(query_main)
         query_drop_temp = "DROP TEMPORARY TABLE temp_ids;"
         self.client.query(query_drop_temp)
-        desc = {}
-        for row in result.result_rows:
-            row_split = row[0].split()
-            des = ' '.join(row_split[1:])
-            words = des.split()
-            if '.' not in words[0]:
-                words[0] = '*' * len(words[0])
-            des = ' '.join(words)
-            desc[row_split[0]] = (des, row[1])
+        desc = extract_cluster_desc(result)
         return desc
 
     def display_product_info(self, product_id, product_info):
-        self.product_index_value.setText(str(product_id))
-        self.description_value.setText(product_info[0])
-        self.category_value.setText(product_info[1])
+        #self.product_index_value.setText(str(product_id)) self.get_product_to_index(
+        if product_info is None:
+            query = f"""SELECT descr_prod, descr_rep FROM dati_scontrini WHERE cod_prod == '{product_id}' LIMIT 1;"""
+            result = self.client.query(query)
+            desc = extract_cluster_desc(result)
+            self.description_value.setText(desc[product_id][0])
+            self.category_value.setText(desc[product_id][1])
+        else:
+            self.description_value.setText(product_info[0])
+            self.category_value.setText(product_info[1])
+        self.product_index_value.setText(str(self.get_product_to_index(product_id)))
+        
 
     def display_descriptions(self, descriptions):
         self.table_widget.setRowCount(len(descriptions))
@@ -376,7 +390,7 @@ class PageRankNibbleApp(QMainWindow):
         self.clear_row_highlighting()
         for point in points:
             node_index = point.index()  # Get the index of the clicked node
-            node_id = int(self.index_to_id[nodes[node_index]])  # Get the product ID from the nodes list
+            node_id = int(self.get_index_to_product(nodes[node_index]))  # Get the product ID from the nodes list
             # Find the row in the table that corresponds to the clicked node
             for row in range(self.table_widget.rowCount()):
                 item = self.table_widget.item(row, 0)  # Get the item in the first column (product ID)
@@ -439,13 +453,14 @@ class PageRankNibbleApp(QMainWindow):
         scatter.sigClicked.connect(functools.partial(self.on_node_click, nodes=nodes))
 
 if __name__ == "__main__":
+    load_dotenv()
     client_params = {
-        "host": 'localhost',
-        "port": 8123,
-        "database": 'mydb',
-        "user": 'evision',
-        "psw": 'Evision!',
-        "table_name": 'dati_scontrini'
+        "host": os.getenv('CLICKHOUSE_HOST'),
+        "port": os.getenv('CLICKHOUSE_PORT'),
+        "database": os.getenv('CLICKHOUSE_DATABASE'),
+        "user": os.getenv('CLICKHOUSE_USER'),
+        "psw": os.getenv('CLICKHOUSE_PASSWORD'),
+        "table_name": os.getenv('CLICKHOUSE_TABLENAME')
     }
     app = QApplication(sys.argv)
     window = PageRankNibbleApp(**client_params)
