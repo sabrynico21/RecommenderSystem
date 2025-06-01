@@ -1,8 +1,7 @@
 # Random-walk-based Recommender System
 
 This repository contains the code and experiments for the paper **"Random-walk-based Recommender System"**, which proposes a novel approach to recommendation using random walks on graphs.
-
-The paper introduces a graph-based method that leverages the topology of item co-occurrence for personalized recommendations, aiming to demonstrate how random walks can be used to uncover item-item relationships.
+The paper introduces a graph-based method that leverages the topology of item co-occurrence for recommendations, aiming to demonstrate how random walks can reveal item-item relationships in a grocery retail domain.
 
 ## 🧠 Overview of the Method
 
@@ -11,29 +10,54 @@ The paper introduces a graph-based method that leverages the topology of item co
 
 ## 📁 Repository Structure
 
-<pre> ``` .
+<pre>
 ├── data/                        # Graph data used in experiments
-│   └── *.pkl                    # Pickled NetworkX graphs
-│                                # Generated or loaded depending on script args
-│
+│   ├── graph_*.pkl              # Pickled NetworkX graphs
+│   ├── random_edges_*.txt       # Edges sampled for the link prediction task
+│   ├── selected_nodes.txt       # Nodes selected to evaluate performance (CCR, F1-score, execution time)
+
 ├── src/                         # Source code
 │   ├── validation.py            # Main script to run experiments
 │                                # Args:
-│                                #   --load (bool): Load graph from .pkl or build new
+│                                #   --load (bool): If True, load graph from .pkl
 │                                #   --mode (str): 'weighted' or 'unweighted'
 │                                #   --t_min / --t_max (float): Edge weight thresholds
 │                                #   --task (str): 'predictions', 'performances', 'frequent_items'
-│   ├── display_plots.py         # Script for showing result plots
-│
+│                                #   --edge_weight (int): Weight used to sample edges (for link prediction)
+│                                #   --random (bool): If True, select nodes/edges randomly to perform the selected experiment  
+│   ├── display_plots.py         # Script for visualizing results
+
 ├── results/                     # Output from experiments
-│   ├── Link prediction/         # Visuals and metrics for link prediction task
+│   ├── Link prediction/         # Visuals and metrics for the link prediction task
 │   ├── Frequent Itemset Comparison/
 │                                # Comparison with frequent itemset mining methods
 │   ├── w_test_epsilon_performances.pkl
 │   └── unw_test_epsilon_performances.pkl
 │                                # Metrics: CCR, F1-score, execution time (weighted/unweighted)
-│
+
 ├── requirements.txt             # Python dependencies
 └── README.md                    # Project documentation
+</pre>
 
-``` </pre>
+## 🧪 Running Experiments
+
+You can run different experiments using the `validation.py` script by passing the appropriate command-line arguments.
+
+### 📊 Performance Evaluation
+
+Run the algorithm and evaluate it using CCR, F1-score, and execution time:
+
+```bash
+python -m validation --load True --mode <weighted|unweighted> --t_min <int> --t_max <int> --task performances --random <True|False> 
+```
+### 🔗 Link prediction
+
+```bash
+python -m validation --load True --mode <weighted|unweighted> --t_min <int> --t_max <int> --task predictions --edge_weight 100 --random <True|False>
+```
+### 🧺 Frequent Items Calculation
+
+```bash
+python -m validation --load True --mode <weighted|unweighted> --t_min <int> --t_max <int> --task frequent_items
+
+
