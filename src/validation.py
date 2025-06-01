@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--seed', help='Specify id of the seed node')
     parser.add_argument('--task', default="performances", choices=["predictions", "performances","frequent_items"], help='Specify the task to perform')
     parser.add_argument('--edge_weight', default=50, type=int, help='Specify the edge weight for link prediction task')
+    parser.add_argument('--random', default="False", help='Specify if use random selection of nodes/edges for the selected task')
     args = parser.parse_args()
     load_dotenv()
 
@@ -68,11 +69,12 @@ def main():
         #weight = 50
         weight = args.edge_weight
         dev = 10
-        #num = 50
-        #random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
-    
-        with open(f"../data/random_edges_{weight}.txt") as f:
-            random_edges = ast.literal_eval(f.read())
+        if args.random == "True":
+            num = 50
+            random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
+        else:
+            with open(f"../data/random_edges_{weight}.txt") as f:
+                random_edges = ast.literal_eval(f.read())
         with open(testing_file_path, 'a') as f:
             f.write(f"EDGE_WEIGHT: {weight - dev} - {weight + dev}\n")
             f.write(f"graph: {args.t_min} - {args.t_max}\n")
@@ -84,8 +86,8 @@ def main():
         percent = 30
         reduced_graph = remove_random_edges(graph, percent)
         print("Number of nodes:", reduced_graph.number_of_nodes())
-        print("Number of edges:", reduced_graph.number_of_edges())
-        validation(graph, reduced_graph, args.mode)
+        print("Number of edges:", reduced_graph.number_of_edges())    
+        validation(graph, reduced_graph, args.mode, 1000, args.random)
 
     elif args.task == "frequent_items":
         # Frequent Itemsets for selected nodes
