@@ -151,3 +151,12 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 edge_weights.pkl
+
+# Market basket analysis results
+output/
+
+# Clusters info
+Results/clusters_info.json
+Results/w_clusters_info.json
+
+.vscode/
