@@ -134,7 +134,7 @@ def plot_f1_boxplots(data, unw_data, name):
         f1_scores = metrics.get("f1_scores", [])
         if f1_scores:
             f1_unw_data.append(f1_scores)   
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(7, 5))
     n = len(labels)
     positions1 = np.arange(n) - 0.2  
     positions2 = np.arange(n) + 0.2  
@@ -291,13 +291,14 @@ def plot_topN(data, unw_data):
     })
 
     # Plot violin
-    plt.figure(figsize=(8, 5))
+    plt.figure(figsize=(7, 5))
     sns.violinplot(data=df, x="conf", y="values", hue="type", split=True, inner="box", palette="Set2", cut=0, gap=.1)
     plt.xlabel("")
-    plt.ylabel("Overlap Ratio (Top-15)")
+    plt.ylabel("Overlap Ratio (Top-15)", fontsize=14)
     plt.legend(title=None) 
     plt.ylim(0, 1.05)
     plt.tight_layout()
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
     #plt.savefig(f"overlap_ratio_top15.png")
     plt.show()
         
@@ -329,11 +330,11 @@ def compare_originals(data, unw_data):
             'type': types
         })
     
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    fig, ax1 = plt.subplots(figsize=(7, 5))
 
     # Violin plot for overlap ratio
     sns.violinplot(data=df, x="type", y="values", inner="box", palette='pastel', ax=ax1)
-    ax1.set_ylabel("Overlap Ratio")
+    ax1.set_ylabel("Overlap Ratio", fontsize=14)
     ax1.set_ylim(0, 1.05)
 
     ax1.set_xlabel("")
@@ -351,7 +352,7 @@ def compare_execution_times(data, unw_data):
             
     graph_names = list(data.keys())
         
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(7, 5))
     
     plt.ylabel("Time (s)")
 

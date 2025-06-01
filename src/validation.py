@@ -1,7 +1,8 @@
 import pickle
 import argparse
-import clickhouse_connect
-import os
+# import clickhouse_connect
+# import os
+import pandas as pd
 from dotenv import load_dotenv
 from graph_utils import *
 from graph import Graph
@@ -16,16 +17,17 @@ def main():
     parser.add_argument('--mode', default="weighted", choices=["weighted","unweighted"], help='Specify whether to use weighted or unweighted graph')
     parser.add_argument('--seed', help='Specify id of the seed node')
     parser.add_argument('--task', default="performances", choices=["predictions", "performances","frequent_items"], help='Specify the task to perform')
+    parser.add_argument('--edge_weight', default=50, type=int, help='Specify the edge weight for link prediction task')
     args = parser.parse_args()
     load_dotenv()
 
-    client = clickhouse_connect.get_client(
-    host=os.getenv('CLICKHOUSE_HOST'),
-    port=int(os.getenv('CLICKHOUSE_PORT')),
-    username=os.getenv('CLICKHOUSE_USER'),
-    password=os.getenv('CLICKHOUSE_PASSWORD'),
-    database=os.getenv('CLICKHOUSE_DATABASE')
-    )
+    # client = clickhouse_connect.get_client(
+    # host=os.getenv('CLICKHOUSE_HOST'),
+    # port=int(os.getenv('CLICKHOUSE_PORT')),
+    # username=os.getenv('CLICKHOUSE_USER'),
+    # password=os.getenv('CLICKHOUSE_PASSWORD'),
+    # database=os.getenv('CLICKHOUSE_DATABASE')
+    # )
     
     if args.load == "False":
         #table_name = 'dati_scontrini'
@@ -51,28 +53,31 @@ def main():
             pickle.dump({'id_to_index': graph.get_product_to_index(), 'index_to_id': graph.get_index_to_product()}, f)
         
     else:
-        file_path = "../data/graph.pkl"
+        file_path = f"../data/graph_{args.t_min}-{args.t_max}.pkl"
         graph = Graph.load_graph(file_path, int(args.t_min), float(args.t_max))
-        dict_path = "../data/products_dict.pkl"
+        dict_path = f"../data/products_dict_{graph.t_min}-{graph.t_max}.pkl"
         graph.load_dicts(dict_path)    
 
     print("Number of nodes:", graph.number_of_nodes())
     print("Number of edges:", graph.number_of_edges())
-
-    exit(0)
     
     if args.task == "predictions":
     
         #Link Prediction task
         testing_file_path = "../Results/Link prediction/prova.txt"
-        weight = 50
+        #weight = 50
+        weight = args.edge_weight
         dev = 10
-        num = 50
-        random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
+        #num = 50
+        #random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
+    
+        with open(f"../data/random_edges_{weight}.txt") as f:
+            random_edges = ast.literal_eval(f.read())
         with open(testing_file_path, 'a') as f:
             f.write(f"EDGE_WEIGHT: {weight - dev} - {weight + dev}\n")
             f.write(f"graph: {args.t_min} - {args.t_max}\n")
-        link_prediction(random_edges, graph, client, testing_file_path, args.mode)
+        df = pd.read_csv("../data/grouped_products.csv")
+        link_prediction(random_edges, graph, df, testing_file_path, args.mode)
 
     elif args.task == "performances":
         # Performance evaluation with Reduced Graphs

@@ -10,7 +10,7 @@ from collections import defaultdict
 import collections
 #random.seed(42)
 
-def link_prediction(random_edges, graph, client, testing_file_path, mode):
+def link_prediction(random_edges, graph, df, testing_file_path, mode):
     or_same_cluster = []
     re_same_cluster = []
     total_jaccard_sim = []
@@ -18,7 +18,7 @@ def link_prediction(random_edges, graph, client, testing_file_path, mode):
     total_red_mean = []
     
     for i in range(len(random_edges)):
-        red_graph = graph.new_graph_removing_receipts(client, random_edges[i])
+        red_graph = graph.new_graph_removing_receipts_from_df(df, random_edges[i])
         print("Number of edges:", graph.number_of_edges())
         print("Number of edges:", red_graph.number_of_edges())
         product1 = graph.get_product_to_index(random_edges[i][0])

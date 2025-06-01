@@ -4,6 +4,9 @@ import random
 from collections import defaultdict
 import numpy as np
 import networkx as nx
+import math
+import re
+from collections import defaultdict
 
 class Graph:
     def __init__(self):
@@ -27,7 +30,7 @@ class Graph:
         self.t_min = t_min
     
     def set_t_max(self, t_max):
-        self.t_max = t_max
+        self.t_max = int(t_max) if not math.isinf(t_max) else t_max
 
     def get_graph(self):
         return self.graph
@@ -79,7 +82,7 @@ class Graph:
         new_graph.product_to_index = self.product_to_index.copy()
         new_graph.index_to_product = self.index_to_product.copy()
         new_graph.t_min = self.t_min
-        new_graph.t_max = self.t_max
+        new_graph.t_max = self.t_max 
         return new_graph
     
     def create_graph(self, edge_weights, t_min, t_max):
@@ -161,7 +164,31 @@ class Graph:
                     weights_to_remove[edge] += 1
         new_graph = self.subtract_edgeweights(weights_to_remove)
         return new_graph
-    
+
+    def new_graph_removing_receipts_from_df(self, df, random_edge):
+        # Create regex patterns to match full words (tokens)
+        p1, p2 = random_edge[0], random_edge[1]
+        pattern1 = re.compile(rf'\b{re.escape(p1)}\b')
+        pattern2 = re.compile(rf'\b{re.escape(p2)}\b')
+
+        # Filter rows where both products appear in the 'products' column
+        #filtered_df = df[df['products'].apply(lambda x: bool(pattern1.search(x)) and bool(pattern2.search(x)))]
+        filtered_df = df[df['products'].apply(lambda x: bool(pattern1.search(str(x))) and bool(pattern2.search(str(x))))]
+
+        weights_to_remove = defaultdict(int)
+
+        for _, row in filtered_df.iterrows():
+            products = list(set(row['products'].split(' '))) 
+            for i in range(len(products)):
+                for j in range(i + 1, len(products)):
+                    if products[i] not in self.product_to_index or products[j] not in self.product_to_index:
+                        continue
+                    edge = (self.product_to_index[products[i]], self.product_to_index[products[j]])
+                    weights_to_remove[edge] += 1
+
+        new_graph = self.subtract_edgeweights(weights_to_remove)
+        return new_graph
+
     def remove_random_edges(self, percentage):
         graph_copy = self.graph.copy()
         num_edges_to_remove = int(percentage * self.graph.number_of_edges() / 100)
