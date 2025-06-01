@@ -52,21 +52,21 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
     
     return r
 
-def compute_epsilon(graph, x, c):
-    #c = 0.003
-    #c = 0.001
-    #c = 0.00006 #prova
-    c = 0.002 #non pesato 
-    #c = 0.0000001 #pesato
+def compute_epsilon(graph, x, mode):
+    if mode == "unweighted":
+        c = 0.002 
+    else:
+        c = 0.00006 
+    
     print(c)
     degree = graph.get_degree(nodes=x)
     print("degree: ", degree)
     n = graph.number_of_nodes()
     m = graph.number_of_edges()
-    epsilon = c * (n / m) * (1 / np.sqrt(degree + 1)) #NON pesato
+    epsilon = c * (n / m) * (1 / np.sqrt(degree + 1))
     return epsilon
 
-def page_rank_nibble(graph, beta, c, mode, seed):
+def page_rank_nibble(graph, beta, mode, seed):
     n = graph.number_of_nodes()
     personalization_dict = defaultdict(float)
     if seed == -1:
@@ -77,7 +77,7 @@ def page_rank_nibble(graph, beta, c, mode, seed):
         seed_node = seed
     personalization_dict[seed_node] = 1
         
-    epsilon = compute_epsilon(graph, seed_node, c)
+    epsilon = compute_epsilon(graph, seed_node, mode)
     print("epsilon:", epsilon)
     r = approximate_personalized_page_rank(graph, personalization_dict, beta, epsilon, mode)
     

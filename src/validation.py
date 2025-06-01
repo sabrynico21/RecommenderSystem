@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from graph_utils import *
 from graph import Graph
+from marketbasket import save_frequent_items
 
 def main():
 
@@ -14,6 +15,7 @@ def main():
     parser.add_argument('--t_max', default=float('inf'), help='Specify the max threshold')
     parser.add_argument('--mode', default="weighted", choices=["weighted","unweighted"], help='Specify whether to use weighted or unweighted graph')
     parser.add_argument('--seed', help='Specify id of the seed node')
+    parser.add_argument('--task', default="performances", choices=["predictions", "performances","frequent_items"], help='Specify the task to perform')
     args = parser.parse_args()
     load_dotenv()
 
@@ -42,11 +44,11 @@ def main():
         #plot_degree_distribution(graph)
         #fit_powerlaw_on_degree_distribution_CDDF(graph)
         
-        # with open("graph.pkl", "wb") as f:
-        #     pickle.dump(graph.get_graph(), f)
+        with open(f"../data/graph_{graph.t_min}-{graph.t_max}.pkl", "wb") as f:
+            pickle.dump(graph.get_graph(), f)
         
-        # with open('products_dict.pkl', 'wb') as f:
-        #     pickle.dump({'id_to_index': graph.get_product_to_index(), 'index_to_id': graph.get_index_to_product()}, f)
+        with open(f'../data/products_dict_{graph.t_min}-{graph.t_max}.pkl', 'wb') as f:
+            pickle.dump({'id_to_index': graph.get_product_to_index(), 'index_to_id': graph.get_index_to_product()}, f)
         
     else:
         file_path = "../data/graph.pkl"
@@ -56,25 +58,36 @@ def main():
 
     print("Number of nodes:", graph.number_of_nodes())
     print("Number of edges:", graph.number_of_edges())
-    
-    exit(0)
-    #Link Prediction task
-    testing_file_path = "unw_prova.txt"
-    weight = 50
-    dev = 10
-    num = 50
-    random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
-    with open(testing_file_path, 'a') as f:
-        f.write(f"EDGE_WEIGHT: {weight - dev} - {weight + dev}\n")
-        f.write(f"graph: {args.t_min} - {args.t_max}\n")
-    link_prediction(random_edges, graph, client, testing_file_path)
 
-    # Performance evaluation with Reduced Graph
-    percent = 30
-    reduced_graph = remove_random_edges(graph, percent)
-    print("Number of nodes:", reduced_graph.number_of_nodes())
-    print("Number of edges:", reduced_graph.number_of_edges())
-    validation(graph, reduced_graph, 1000, args.mode)
+    exit(0)
+    
+    if args.task == "predictions":
+    
+        #Link Prediction task
+        testing_file_path = "../Results/Link prediction/prova.txt"
+        weight = 50
+        dev = 10
+        num = 50
+        random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
+        with open(testing_file_path, 'a') as f:
+            f.write(f"EDGE_WEIGHT: {weight - dev} - {weight + dev}\n")
+            f.write(f"graph: {args.t_min} - {args.t_max}\n")
+        link_prediction(random_edges, graph, client, testing_file_path, args.mode)
+
+    elif args.task == "performances":
+        # Performance evaluation with Reduced Graphs
+        percent = 30
+        reduced_graph = remove_random_edges(graph, percent)
+        print("Number of nodes:", reduced_graph.number_of_nodes())
+        print("Number of edges:", reduced_graph.number_of_edges())
+        validation(graph, reduced_graph, args.mode)
+
+    elif args.task == "frequent_items":
+        # Frequent Itemsets for selected nodes
+        with open("../data/selected_nodes.txt") as f:
+            selected_nodes = ast.literal_eval(f.read())
+        
+        save_frequent_items( selected_nodes)
 
 if __name__ == "__main__":
     main()
