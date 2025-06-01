@@ -11,7 +11,7 @@ The paper introduces a graph-based method that leverages the topology of item co
 
 ## 📁 Repository Structure
 
-.
+<pre> ``` .
 ├── data/                        # Graph data used in experiments
 │   └── *.pkl                    # Pickled NetworkX graphs
 │                                # Generated or loaded depending on script args
@@ -36,4 +36,4 @@ The paper introduces a graph-based method that leverages the topology of item co
 ├── requirements.txt             # Python dependencies
 └── README.md                    # Project documentation
 
-
+``` </pre>
