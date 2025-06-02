@@ -16,6 +16,8 @@ The paper introduces a graph-based method that leverages the topology of item co
 │   ├── edge_weights.pkl         # Pickled dictionary containing co-purchase product frequencies
 │   ├── selected_nodes.txt       # Nodes selected to evaluate performance (CCR, F1-score, execution time)
 
+├── output/frequent_items        # Frequent items obtained by executing the FP-Growth algorithm
+ 
 ├── src/                         # Source code
 │   ├── validation.py            # Main script to run experiments
 │                                # Args:
