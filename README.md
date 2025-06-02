@@ -13,7 +13,7 @@ The paper introduces a graph-based method that leverages the topology of item co
 <pre>
 ├── data/                        # Graph data used in experiments
 │   ├── graph_*.pkl              # Pickled NetworkX graphs
-│   ├── random_edges_*.txt       # Edges sampled for the link prediction task
+│   ├── edge_weights.pkl         # Pickled dictionary containing co-purchase product frequencies
 │   ├── selected_nodes.txt       # Nodes selected to evaluate performance (CCR, F1-score, execution time)
 
 ├── src/                         # Source code
@@ -41,9 +41,9 @@ The paper introduces a graph-based method that leverages the topology of item co
 
 ## 🧪 Running Experiments
 
-You can run different experiments using the `validation.py` script by passing the appropriate command-line arguments.
+You can run different experiments using the `validation.py` script by passing the appropriate command-line arguments. If the `--random` parameter is set to "True", the same nodes/edges used in the original paper will be selected.
 
-### 📊 Performance Evaluation
+### 📊 Performances
 
 Run the algorithm and evaluate it using CCR, F1-score, and execution time:
 
@@ -52,10 +52,14 @@ python -m validation --load True --mode <weighted|unweighted> --t_min <int> --t_
 ```
 ### 🔗 Link prediction
 
+Evaluate the algorithm’s performance in link prediction by removing specific co-purchased product information (edge), along with all transactions (receipts) in which both products appear, from the recommendation graph.
+
 ```bash
 python -m validation --load True --mode <weighted|unweighted> --t_min <int> --t_max <int> --task predictions --edge_weight 100 --random <True|False>
 ```
 ### 🧺 Frequent Items Calculation
+
+Compute the frequent itemsets for the selected products (listed in selected_products.txt) to compare with the results of the random-walk-based approach:
 
 ```bash
 python -m validation --load True --mode <weighted|unweighted> --t_min <int> --t_max <int> --task frequent_items
