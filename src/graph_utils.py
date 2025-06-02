@@ -58,13 +58,17 @@ def plot_degree_distribution(graph):
     plt.savefig(f'{graph.t_min}-{graph.t_max}_edge_degree_frequency.png')
     plt.show()
 
-def extract_random_edges(data, val, dev, num, file_path):
+import random
+
+def extract_random_edges(data, val, dev, num, file_path, random_sel="False"):
     filtered_keys = [k for k, v in data.items() if val - dev <= v <= val + dev]
-    local_random = random.Random(42)
+    local_random = random.Random() if random_sel else random.Random(42)
     if len(filtered_keys) < num:
         with open(file_path, 'a') as f:
             f.write(f"trovati solo {len(filtered_keys)} nodi \n")
+
     return local_random.sample(filtered_keys, min(num, len(filtered_keys)))
+
 
 def query(client):
     query = f"SELECT DISTINCT(products) FROM grouped_products WHERE products NOT LIKE '% %';"
@@ -267,14 +271,14 @@ def metric_calculation(graph, original_cluster, reduced_cluster):
         red_mean_degree = graph.mean_degree(red_cluster) 
     return result, sensitivity, precision, or_mean_degree, red_mean_degree
 
-def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, mode):
+def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, random_sel="False"):
     eligible_nodes = [node for node, degree in graph.degree() if degree_min < degree <= degree_max]
     # Step 2: If fewer than x nodes match, adjust x to avoid an error
     if len(eligible_nodes) < x:
         with open('test_epsiloncompute.txt', 'a') as f:
             f.write(f"Warning: Only {len(eligible_nodes)} nodes available within the degree range.")
         x = len(eligible_nodes)
-    local_random = random.Random(42)
+    local_random = random.Random() if random_sel else random.Random(42)
     sampled_nodes = local_random.sample(eligible_nodes, x)
     return sampled_nodes
 
@@ -320,11 +324,12 @@ def validation(graph, reduced_graph, mode, num_nodes=0, random="False"):
     degree_max = [float('inf')]
     for min_d, max_d in zip(degree_min, degree_max):
         if random == "True":
-            selected_nodes = sample_nodes_within_degree_range(graph, min_d, max_d, int(num_nodes /len(degree_min)), mode) 
+            selected_nodes = sample_nodes_within_degree_range(graph, min_d, max_d, int(num_nodes /len(degree_min)), random) 
         else:
             with open("../data/selected_nodes.txt") as f:
                 selected_nodes = ast.literal_eval(f.read())
             selected_nodes = [graph.product_to_index[node] for node in selected_nodes]
+            
         single_node_cluster = []
         original_cluster, times = calculate_clusters(graph, selected_nodes, mode)
         reduced_cluster, _ = calculate_clusters(reduced_graph, selected_nodes, mode) 

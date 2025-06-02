@@ -66,15 +66,13 @@ def main():
     
         #Link Prediction task
         testing_file_path = "../Results/Link prediction/prova.txt"
-        #weight = 50
         weight = args.edge_weight
         dev = 10
-        if args.random == "True":
-            num = 50
-            random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path)
-        else:
-            with open(f"../data/random_edges_{weight}.txt") as f:
-                random_edges = ast.literal_eval(f.read())
+        num = 50
+        with open('../data/edge_weights.pkl', 'rb') as file:
+            edge_weights = pickle.load(file)
+        random_edges = extract_random_edges(edge_weights, weight, dev, num, testing_file_path, args.random)
+        
         with open(testing_file_path, 'a') as f:
             f.write(f"EDGE_WEIGHT: {weight - dev} - {weight + dev}\n")
             f.write(f"graph: {args.t_min} - {args.t_max}\n")
