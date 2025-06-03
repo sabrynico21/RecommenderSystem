@@ -4,6 +4,7 @@ import pandas as pd
 import seaborn as sns
 import numpy as np
 from collections import Counter
+from graph import Graph
 import pickle
 sns.set(style="whitegrid")
 
@@ -365,7 +366,7 @@ def compare_execution_times(data, unw_data):
     plt.show()
     return
     
-
+    
 def extract_frequent_item_recall(files, unw_files):
     with open('../Results/Frequent Itemset Comparison/frequent_items.pkl', 'rb') as f:
         frequent_items = pickle.load(f)
@@ -378,7 +379,7 @@ def extract_frequent_item_recall(files, unw_files):
 
         with open(unw_files[i], 'rb') as f:
             unw_data = pickle.load(f)
-        graph_conf = files[i].split("_")[1].split(".")[0]
+        graph_conf = files[i].split("_")[2].split(".")[0]
         #print("graph_config", graph_conf)
         final_results[graph_conf] = { }
         unw_final_results[graph_conf] = { }
@@ -396,10 +397,8 @@ def extract_frequent_item_recall(files, unw_files):
             unw_final_results[graph_conf][t] = unw_results
     return final_results, unw_final_results
 
-def display_freq_item_recall(results, name):
+def display_freq_item_recall(results, name, min_edges):
     data = []
-    labels = []
-    group_labels = []
     t_labels = []
     positions = []
     colors = []
@@ -410,55 +409,111 @@ def display_freq_item_recall(results, name):
     }
     t_values = [5, 10, 15, 20, 25, 30]
     box_width = 0.6
-    gap = 1  # gap between groups
+    gap = 1.5  # slightly bigger gap
 
     pos = 0
-    for graph_conf in results:
-        for idx, t in enumerate(t_values):
+    config_names = list(results.keys())
+    config_pos = {}
+
+    for graph_conf in config_names:
+        config_pos[graph_conf] = []
+        for t in t_values:
             data.append(results[graph_conf][t])
             t_labels.append(f"top {t}")
-            group_labels.append(graph_conf)
             positions.append(pos)
             colors.append(config_colors[graph_conf])
+            config_pos[graph_conf].append(pos)
             pos += 1
-        pos += gap  # add gap after each group
+        pos += gap
 
-    # Plot
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(14, 6))
     box = ax.boxplot(data, positions=positions, widths=box_width, patch_artist=True, showmeans=True)
 
-    # Color boxes by configuration
+    # Style boxplot
     for patch, color in zip(box['boxes'], colors):
         patch.set_facecolor(color)
-
     for median in box['medians']:
         median.set_color('yellow')
         median.set_linewidth(2)
-
     for mean in box['means']:
         mean.set_marker('x')
         mean.set_markeredgecolor('#333333')
         mean.set_markersize(8)
 
-    # Set x-ticks for t_labels
     ax.set_xticks(positions)
     ax.set_xticklabels(t_labels, rotation=45, fontsize=11)
+    ax.set_ylabel("Frequent Item Recall", fontsize=12)
 
-    # Add group labels (graph configuration) at the center of each group
-    group_centers = []
-    group_names = []
-    start = 0
-    for graph_conf in results:
-        center = np.mean(positions[start:start+len(t_values)])
-        group_centers.append(center)
-        group_names.append(graph_conf)
-        start += len(t_values) + 1  # +1 for gap
-
-    # Legend
-    handles = [plt.Line2D([0], [0], color=color, lw=8) for color in config_colors.values()]
+    # Legend for box colors
+    handles = [plt.Line2D([0], [0], color=color, lw=10) for color in config_colors.values()]
     ax.legend(handles, config_colors.keys(), title="Graph configurations", loc='upper center')
 
-    ax.set_ylabel("Frequent Item Recall")
+    # Secondary y-axis
+    ax2 = ax.twinx()
+    all_min_edge_vals = []
+    config_styles = {
+        "40-510": {"color": "#d62728", "marker": "o"},
+        "15-inf": {"color": "#d62728", "marker": "s"},  # changed color and marker
+    }
+    for i, graph_conf in enumerate(config_names):
+        min_edge_vals = [min_edges[i][t] for t in t_values]
+        all_min_edge_vals.extend(min_edge_vals)
+        ax2.plot(
+            config_pos[graph_conf],
+            min_edge_vals,
+            marker=config_styles[graph_conf]["marker"],
+            color=config_styles[graph_conf]["color"],
+            linestyle='--',
+            linewidth=2,
+            markersize=6
+        )
+
+    ax2.set_ylabel("Minimum Edge Weight", fontsize=12)
+    ax2.set_ylim(0, 50)
+    ax2.grid(False)
+
+    # Remove second legend (already shown in box color)
+    # Improve layout
+    #plt.title(name, fontsize=14)
+    plt.savefig(f"../Results/Frequent Itemset Comparison/{name}.png")
     plt.tight_layout()
-    #plt.savefig(f"{name}.png")
     plt.show()
+
+# Compute the minimum edge weights for clusters obtained with specified thresholds.
+def compute_min_edge_weights(t_min, t_max, weighted="True"):
+    weight = "w" if weighted == "True" else "unw"
+    with open(f'../Results/Frequent Itemset Comparison/{weight}_clusters_{t_min}-{t_max}.pkl', 'rb') as f:
+        clusters = pickle.load(f)
+    file_path = f"../data/graph_{t_min}-{t_max}.pkl"
+    graph = Graph.load_graph(file_path, int(t_min), float(t_max) if t_max != "inf" else float('inf'))
+    dict_path = f"../data/products_dict_{t_min}-{t_max}.pkl"
+    graph.load_dicts(dict_path)
+    min_values = {}
+    for top_N in [5,10,15,20,25,30]:
+        total_min_weight = []
+        for cluster in clusters:
+            cluster = cluster[:top_N]
+            products_index = [graph.product_to_index[product] for product in cluster if product in graph.product_to_index]
+            sub_g = graph.subgraph(products_index)
+            min_weight = min(
+                (data.get('weight', 1) for u, v, data in sub_g.edges(data=True)),
+                default=None
+            )
+            if min_weight is None:
+                continue
+            total_min_weight.append(min_weight)
+        min_values[top_N] = int(np.mean(total_min_weight))
+  
+    return min_values
+
+def compute_min_weights_by_graph():
+    min_ts = [40, 15]
+    max_ts = [510, "inf"]
+    min_values = []
+    unw_min_values = []
+    for i in range(len(min_ts)):
+        print(f"t_min: {min_ts[i]}, t_max: {max_ts[i]}")
+        min_values.append(compute_min_edge_weights(min_ts[i], max_ts[i], "True"))
+        unw_min_values.append(compute_min_edge_weights(min_ts[i], max_ts[i], "False"))
+
+    return min_values, unw_min_values

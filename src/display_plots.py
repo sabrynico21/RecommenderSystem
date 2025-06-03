@@ -30,8 +30,11 @@ compare_originals(data, unw_data)
 compare_execution_times(data, unw_data)
 
 #Frequent Itemset Comparison Results
-files = ['../Results/Frequent Itemset Comparison/clusters_40-510.pkl', '../Results/Frequent Itemset Comparison/clusters_15-inf.pkl']
+files = ['../Results/Frequent Itemset Comparison/w_clusters_40-510.pkl', '../Results/Frequent Itemset Comparison/w_clusters_15-inf.pkl']
 unw_files = ['../Results/Frequent Itemset Comparison/unw_clusters_40-510.pkl', '../Results/Frequent Itemset Comparison/unw_clusters_15-inf.pkl']
 final_results, unw_final_results = extract_frequent_item_recall(files, unw_files)
-display_freq_item_recall(final_results, "freq_items_comp")
-display_freq_item_recall(unw_final_results, "unw_freq_items_comp")
+min_values, unw_min_values = compute_min_weights_by_graph()
+
+display_freq_item_recall(final_results, "w_freq_items_comp", min_values)
+display_freq_item_recall(unw_final_results, "unw_freq_items_comp", unw_min_values)
+
