@@ -1,0 +1,7 @@
+networkx==3.4.2
+matplotlib==3.10.3
+numpy==2.2.5
+powerlaw==1.5
+pyspark==3.5.5
+pandas==2.2.3
+seaborn==0.13.2
