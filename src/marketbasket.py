@@ -16,7 +16,6 @@ def save_frequent_items(selected_nodes):
         .config("spark.executor.memory", "4g") \
         .config("spark.driver.memory", "4g") \
         .master("local[*]") \
-        .config("spark.local.dir", "C:/Users/sabry/Documents/spark_temp") \
         .getOrCreate()
     frequent_items = []
     df = spark.read.parquet("../output/frequent_items")
@@ -50,7 +49,6 @@ def calculate_frequent_items():
         .config("spark.memory.offHeap.enabled", "true") \
         .config("spark.memory.offHeap.size", "8g") \
         .master("local[*]") \
-        .config("spark.local.dir", "C:/Users/sabry/Documents/spark_temp") \
         .getOrCreate()
 
     df_raw = spark.read.csv(os.getenv('GROUPED_PRODUCTS'), header=True, inferSchema=True)
