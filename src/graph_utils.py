@@ -325,6 +325,8 @@ def validation(graph, reduced_graph, mode, num_nodes=0, random="False"):
     for min_d, max_d in zip(degree_min, degree_max):
         if random == "True":
             selected_nodes = sample_nodes_within_degree_range(graph, min_d, max_d, int(num_nodes /len(degree_min)), random) 
+            with open("../data/selected_nodes.txt", "w") as f:
+                f.write(str(selected_nodes))
         else:
             with open("../data/selected_nodes.txt") as f:
                 selected_nodes = ast.literal_eval(f.read())
