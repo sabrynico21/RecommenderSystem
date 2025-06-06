@@ -1,6 +1,6 @@
 # Random-walk-based Recommender System
 
-This repository contains the code and experiments for the paper **"Random-walk-based Recommender System"**, which proposes a novel approach to recommendation using random walks on graphs.
+This repository contains the code and experiments for the paper **"Real-Time Personalized Recommendations Using Local Random Walks on Co-Purchase Networks"**, which proposes a novel approach to recommendation using random walks on graphs.
 The paper introduces a graph-based method that leverages the topology of item co-occurrence for recommendations, aiming to demonstrate how random walks can reveal item-item relationships in a grocery retail domain.
 
 ## 🧠 Overview of the Method
