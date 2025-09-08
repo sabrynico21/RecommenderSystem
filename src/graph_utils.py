@@ -75,18 +75,54 @@ def query(client):
     result = client.query(query)
     print(len(result.result_rows)) 
 
-def calulate_edge_weights(client, table_name):
-    query = f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
-    result = client.query(query)
-    edge_weights = defaultdict(int)
-    for row in result.result_rows: 
+# def calulate_edge_weights(client, table_name):
+#     query = f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
+#     result = client.query(query)
+#     edge_weights = defaultdict(int)
+#     for row in result.result_rows: 
+#         products = list(set(row[1].split(' ')))
+#         #print(products)
+#         for i in range(len(products)):
+#             for j in range(i + 1, len(products)):
+#                 edge = (products[i], products[j])
+#                 edge_weights[edge] += 1
+#     return edge_weights
+
+def compute_edges(rows):
+    ew = defaultdict(int)
+    for row in rows:
         products = list(set(row[1].split(' ')))
-        #print(products)
         for i in range(len(products)):
             for j in range(i + 1, len(products)):
-                edge = (products[i], products[j])
-                edge_weights[edge] += 1
-    return edge_weights
+                edge = tuple(sorted((products[i], products[j])))
+                ew[edge] += 1
+    return ew
+
+def calculate_edge_weights(client, table_name, mode="all", split_ratio=0.7, seed=42):
+    client.query("SET max_bytes_before_external_group_by=500000000")
+    #query = f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
+    query = f"SELECT id_sc, arrayStringConcat(groupUniqArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
+    result = client.query(query)
+    rows = result.result_rows
+
+    if mode == "all":
+        edge_weights = compute_edges(rows)
+        return edge_weights
+
+    elif mode == "split":
+        random.seed(seed)
+        random.shuffle(rows)
+        split_index = int(len(rows) * split_ratio)
+        rows_A, rows_B = rows[:split_index], rows[split_index:]
+
+        edge_weights_A = compute_edges(rows_A)
+        edge_weights_B = compute_edges(rows_B)
+
+        return edge_weights_A, edge_weights_B
+
+    else:
+        raise ValueError("Mode must be 'all' or 'split'")
+
 
 def display_edge_weight_distribution(edge_weights):
     weights = [weight for _, weight in edge_weights.items()]
@@ -242,7 +278,7 @@ def calculate_clusters(graph, selected_nodes, mode):
         end_time = time.time()
         times.append(end_time - start_time)
         print("or len: ", len(cluster))
-        clusters.append(cluster)
+        clusters.append(cluster[1:16]) #top 15 recommendations
     return clusters, times
 
 def metric_calculation(graph, original_cluster, reduced_cluster):
@@ -360,3 +396,49 @@ def validation(graph, reduced_graph, mode, num_nodes=0, random="False"):
             f.write(f"or_mean_degree: {or_mean_degree}\n")
             f.write(f"red_mean_degree: {red_mean_degree}\n")
     return
+import torch
+def create_pyg_data_from_networkx(G, weight_attr='weight'):
+    """
+    Create PyG Data object from NetworkX graph with proper formatting
+    """
+    # Get all edges
+    edges = list(G.edges())
+    
+    # Create edge_index in correct format [2, num_edges]
+    edge_list = []
+    edge_weights = []
+    
+    for u, v in edges:
+        edge_list.append([u, v])  # Assuming nodes are 0-indexed integers
+        edge_data = G.get_edge_data(u, v)
+        weight = edge_data.get(weight_attr, 1.0) if edge_data else 1.0
+        edge_weights.append(weight)
+    
+    # Convert to tensors
+    edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
+    edge_attr = torch.tensor(edge_weights, dtype=torch.float)
+    
+    # Create Data object
+    from torch_geometric.data import Data
+    data = Data(edge_index=edge_index, edge_attr=edge_attr, num_nodes=G.number_of_nodes())
+    
+    return data
+
+def cosine_similarity(u, v):
+    return torch.dot(u, v) / (torch.norm(u) * torch.norm(v))
+
+def prune_graph(G, node_embeddings, weight_threshold=10, sim_threshold=0.7):
+    edges_to_remove = []
+
+    for u, v, data in G.edges(data=True):
+        w = data.get("weight", 1)
+
+        if w > weight_threshold:
+            continue  # always keep
+        else:
+            sim = cosine_similarity(node_embeddings[u], node_embeddings[v])
+            if sim < sim_threshold:  # too far in embedding space
+                edges_to_remove.append((u, v))
+
+    G.remove_edges_from(edges_to_remove)
+    return G

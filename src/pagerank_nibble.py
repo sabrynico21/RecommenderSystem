@@ -10,19 +10,17 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
         for node, degree in graph.get_degree(weight=None if mode == "unweighted" else 'weight')
     }
     iterations= 0
+    prev_top_set = None
     while True:
-        if iterations > 5000:
-            break
+        #if iterations > 5000:
+        #    break
         iterations +=1
         candidates = [u for u in q if q[u] / (dg[u] if dg[u]!=0 else float('inf')) > epsilon]
         #print(" candidates:", len(candidates))
         if not candidates:
-            if len(r) > 15:
-                break
-            else:
-                print("si")
-                epsilon = epsilon / 1.1
-                continue
+            print("nessun candidato")
+            epsilon = epsilon / 1.1
+            continue
         u = random.choice(candidates)
         
         retention_ratio = 0.5
@@ -44,7 +42,24 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
             sum_weights = sum(weights)
             for i, v in enumerate(neighbors):
                 q[v] += contrib * push_val * weights[i] / sum_weights
-        
+
+        if iterations % 100 == 0 and len(r) >= 15:
+            # normalize partial r by degree
+            r_norm = {node: r[node] / dg[node] for node in r}
+            total = sum(r_norm.values())
+            if total > 0:
+                r_norm = {node: val / total for node, val in r_norm.items()}
+            
+            # get top-15 node IDs
+            top_items = sorted(r_norm.items(), key=lambda x: x[1], reverse=True)[:15]
+            top_set = set([node for node, _ in top_items])
+            
+            if prev_top_set is not None:
+                overlap = len(top_set & prev_top_set) / 15.0
+                if overlap >= 0.9:
+                    break  # stop if stable enough
+            
+            prev_top_set = top_set
     # Normalize r by degree
     r = {node: r[node] / dg[node] for node in r}
     total = sum(r.values())
