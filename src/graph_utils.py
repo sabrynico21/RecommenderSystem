@@ -71,9 +71,11 @@ def extract_random_edges(data, val, dev, num, file_path, random_sel="False"):
 
 
 def query(client):
-    query = f"SELECT DISTINCT(products) FROM grouped_products WHERE products NOT LIKE '% %';"
+    #query = f"SELECT DISTINCT(products) FROM grouped_products WHERE products NOT LIKE '% %';"
+    query = f"SELECT cod_prod AS cod_prod, any(descr_liv1) AS descr_liv1, any(descr_liv2) AS descr_liv2, any(descr_liv3) AS descr_liv3, any(descr_liv4) AS descr_liv4 FROM dati_scontrini GROUP BY cod_prod;"
     result = client.query(query)
     print(len(result.result_rows)) 
+    return result
 
 # def calulate_edge_weights(client, table_name):
 #     query = f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
@@ -278,7 +280,7 @@ def calculate_clusters(graph, selected_nodes, mode):
         end_time = time.time()
         times.append(end_time - start_time)
         print("or len: ", len(cluster))
-        clusters.append(cluster[1:16]) #top 15 recommendations
+        clusters.append(cluster)
     return clusters, times
 
 def metric_calculation(graph, original_cluster, reduced_cluster):
@@ -442,3 +444,9 @@ def prune_graph(G, node_embeddings, weight_threshold=10, sim_threshold=0.7):
 
     G.remove_edges_from(edges_to_remove)
     return G
+
+def extract_non_adjacent_nodes(G, cluster, x):
+    neighbors_x = set(G.neighbors(x))
+    non_adjacent = [node for node in cluster if node != x and node not in neighbors_x]
+    top_15 = non_adjacent[:min(15,len(non_adjacent))]
+    return top_15

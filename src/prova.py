@@ -7,7 +7,7 @@ import clickhouse_connect
 from graph import Graph
 from graph_utils import calculate_edge_weights
 from LightGCN import LightGCN
-from graph_utils import create_pyg_data_from_networkx, prune_graph, calculate_clusters
+from graph_utils import create_pyg_data_from_networkx, prune_graph, calculate_clusters, extract_non_adjacent_nodes
 import torch
 import ast
 
@@ -88,15 +88,20 @@ def main():
         print("G pruned - Number of edges:", G_pruned.number_of_edges())
 
         clusters, _ = calculate_clusters(G_pruned, [G_pruned.get_product_to_index(node) for node in selected_nodes], args.mode)
-        print(clusters)
-        exit(0)
+
         #tensor_data = torch.tensor(clusters, dtype=torch.float32)
         #torch.save(tensor_data, "../data/pagerank_features.pt")
         #exit(0)
         #top_15_clusters = [[x for x in clusters[i][1:16]] for i in range(len(clusters))]
         top_15_clusters = defaultdict(set)
         for i, node in enumerate(selected_nodes):
-            top_15_clusters[node] = set([G_pruned.get_index_to_product(x) for x in clusters[i][:min(30, len(clusters[i]))]])
+            non_adjacent = extract_non_adjacent_nodes(G_pruned, clusters[i], G_pruned.get_product_to_index(selected_nodes[i]))
+            print("len non adiacenti:", len(non_adjacent))
+            if len(non_adjacent) == 15:
+                clusters[i] = non_adjacent
+            top_15_clusters[node] = set([G_pruned.get_index_to_product(x) for x in clusters[i]])
+            print("ground truth", ground_truth[node])
+            print("top 15", top_15_clusters[node])
         intersections_clusters = {key: ground_truth[key] & top_15_clusters.get(key, set()) for key in set(ground_truth) | set(top_15_clusters)}
         non_empty_count_clusters = sum(1 for intersection_set in intersections_clusters.values() if intersection_set)
         print(f"Number of nodes with non-empty intersection using clusters: {non_empty_count_clusters} out of {len(selected_nodes)}")
