@@ -448,5 +448,5 @@ def prune_graph(G, node_embeddings, weight_threshold=10, sim_threshold=0.7):
 def extract_non_adjacent_nodes(G, cluster, x):
     neighbors_x = set(G.neighbors(x))
     non_adjacent = [node for node in cluster if node != x and node not in neighbors_x]
-    top_15 = non_adjacent[:min(15,len(non_adjacent))]
-    return top_15
+    #top_30 = non_adjacent[:min(30,len(non_adjacent))]
+    return non_adjacent
