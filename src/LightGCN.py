@@ -8,8 +8,10 @@ from sklearn.metrics import roc_auc_score
 from graph_utils import create_pyg_data_from_networkx
 import networkx as nx
 import os
+from torch.amp import GradScaler, autocast
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
 
 def remap_val_graph_to_train_ids(val_graph, val_to_product_map, product_to_train_map, drop_missing=True):
@@ -54,10 +56,112 @@ def train_lightgcn(train_graph, node_labels, val_graph):
         print("Edge weights used for training")
     else:
         history = model.train_model(edge_index, epochs=30)  # No edge weights
-    torch.save(model.state_dict(), "../LightGCN/lightgcn_model.pth")
-    torch.save(history, "../LightGCN/lightgcn_history.pth")
+    #torch.save(model.state_dict(), "../LightGCN/lightgcn_model.pth")
+    torch.save(history, "../LightGCN/lightgcn_history_pruning.pth")
     node_embeddings = model.get_embeddings(data.edge_index, edge_weight=edge_weight)
     return node_embeddings
+
+
+def supplier_triplet_loss_batch(z, supplier_labels, margin=0.5, num_triplets=1000):
+    """
+    Batch-optimized version for better GPU utilization
+    """
+    device = z.device
+    z = F.normalize(z, p=2, dim=1)
+    
+    # Create triplets in batch
+    anchors, positives, negatives = [], [], []
+    
+    supplier_to_indices = {}
+    for idx, supplier in enumerate(supplier_labels):
+        supplier = supplier.item() if torch.is_tensor(supplier) else supplier
+        if supplier not in supplier_to_indices:
+            supplier_to_indices[supplier] = []
+        supplier_to_indices[supplier].append(idx)
+    
+    # Generate triplets
+    for _ in range(num_triplets):
+        # Random supplier
+        supplier = random.choice(list(supplier_to_indices.keys()))
+        indices = supplier_to_indices[supplier]
+        
+        if len(indices) < 2:
+            continue
+            
+        # Random anchor and positive from same supplier
+        anchor_idx, positive_idx = random.sample(indices, 2)
+        
+        # Random negative from different supplier
+        other_suppliers = [s for s in supplier_to_indices.keys() if s != supplier]
+        if not other_suppliers:
+            continue
+        other_supplier = random.choice(other_suppliers)
+        negative_idx = random.choice(supplier_to_indices[other_supplier])
+        
+        anchors.append(anchor_idx)
+        positives.append(positive_idx)
+        negatives.append(negative_idx)
+    
+    if not anchors:
+        return torch.tensor(0.0, device=device)
+    
+    # Batch distance computation
+    anchor_emb = z[anchors]
+    positive_emb = z[positives]
+    negative_emb = z[negatives]
+    
+    pos_dist = F.pairwise_distance(anchor_emb, positive_emb)
+    neg_dist = F.pairwise_distance(anchor_emb, negative_emb)
+    
+    loss = F.relu(pos_dist - neg_dist + margin).mean()
+    return loss
+
+import random
+
+def reparto_triplet_loss_batch(z, reparto_labels, margin=0.8, num_triplets=1000):
+    """Batch version for reparto"""
+    device = z.device
+    z = F.normalize(z, p=2, dim=1)
+    
+    anchors, positives, negatives = [], [], []
+    
+    reparto_to_indices = {}
+    for idx, reparto in enumerate(reparto_labels):
+        reparto = reparto.item() if torch.is_tensor(reparto) else reparto
+        if reparto not in reparto_to_indices:
+            reparto_to_indices[reparto] = []
+        reparto_to_indices[reparto].append(idx)
+    
+    for _ in range(num_triplets):
+        reparto = random.choice(list(reparto_to_indices.keys()))
+        indices = reparto_to_indices[reparto]
+        
+        if len(indices) < 2:
+            continue
+            
+        anchor_idx, positive_idx = random.sample(indices, 2)
+        
+        other_repartos = [r for r in reparto_to_indices.keys() if r != reparto]
+        if not other_repartos:
+            continue
+        other_reparto = random.choice(other_repartos)
+        negative_idx = random.choice(reparto_to_indices[other_reparto])
+        
+        anchors.append(anchor_idx)
+        positives.append(positive_idx)
+        negatives.append(negative_idx)
+    
+    if not anchors:
+        return torch.tensor(0.0, device=device)
+    
+    anchor_emb = z[anchors]
+    positive_emb = z[positives]
+    negative_emb = z[negatives]
+    
+    pos_dist = F.pairwise_distance(anchor_emb, positive_emb)
+    neg_dist = F.pairwise_distance(anchor_emb, negative_emb)
+    
+    return F.relu(pos_dist - neg_dist + margin).mean()
 
 class LightGCN(nn.Module):
     def __init__(self, num_nodes, node_labels=None, embedding_dim=64, num_layers=3):
@@ -66,16 +170,29 @@ class LightGCN(nn.Module):
         self.embedding_dim = embedding_dim
         self.num_layers = num_layers
         
-        # Store as regular attribute (no need for buffer since it's not a parameter)
         if node_labels is not None:
-            self.node_label_tensors = {}
+            self.node_categories = {}
             for level in ["descr_liv1", "descr_liv2", "descr_liv3", "descr_liv4"]:
                 if level in node_labels.columns:
-                    self.node_label_tensors[level] = torch.tensor(
+                    self.node_categories[level] = torch.tensor(
                         node_labels[level].values, 
                         dtype=torch.long,
                         device=device
                     )
+   
+            # if "descr_forn" in node_labels.columns:
+            #     self.node_supplier = torch.tensor(
+            #         node_labels["descr_forn"].values,
+            #         dtype=torch.long,
+            #         device=device
+            #     )
+
+            # if "descr_rep" in node_labels.columns:
+            #     self.node_department = torch.tensor(
+            #         node_labels["descr_rep"].values,
+            #         dtype=torch.long,
+            #         device=device
+            #     )
         
         self.embedding = nn.Embedding(num_nodes, embedding_dim).to(device)
         self.convs = nn.ModuleList([LGConv().to(device) for _ in range(num_layers)])
@@ -104,15 +221,15 @@ class LightGCN(nn.Module):
 
     import torch.nn.functional as F
 
-    def hierarchy_contrastive_loss(self, z, temperature=0.2, level_weights=[0.1, 0.2, 0.3, 0.4], eps=1e-8):
+    def hierarchy_contrastive_loss(self, z, temperature=0.2, level_weights=[0.4, 0.3, 0.2, 0.1], eps=1e-8):
         N = z.size(0)
         device = z.device
 
         # Initialize hierarchical similarity matrix
         W = torch.zeros((N, N), device=device)
 
-        for w, key in zip(level_weights, self.node_label_tensors.keys()):
-            lbls_raw = self.node_label_tensors[key].to(device)
+        for w, key in zip(level_weights, self.node_categories.keys()):
+            lbls_raw = self.node_categories[key].to(device)
             
             # Handle label alignment safely
             lbls = torch.full((N,), -1, dtype=torch.long, device=device)
@@ -186,7 +303,7 @@ class LightGCN(nn.Module):
         return loss
     
     def train_model(self, edge_index, edge_weight=None, epochs=300, lr=0.01, 
-                neg_samples=1, eval_every=10, val_edge_index=None, lambda_cat=0.4):
+                neg_samples=1, eval_every=10, val_edge_index=None):
         self.train()
         optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=1e-5)
         history = {'train_loss': [], 'val_auc': []}
@@ -201,7 +318,6 @@ class LightGCN(nn.Module):
                 patience=10,
                 min_lr=1e-5
             )
-            # Prepare negative validation edges
             neg_val_edge_index = negative_sampling(
                 val_edge_index,
                 num_nodes=self.num_nodes,
@@ -213,74 +329,97 @@ class LightGCN(nn.Module):
             val_edges = None
             print("No validation data - scheduler disabled")
 
+        scaler = GradScaler()
+        
         for epoch in range(epochs):
             optimizer.zero_grad()
 
-            # 1️⃣ Node embeddings with NaN protection
-            z = self.forward(edge_index, edge_weight)
-            z = F.normalize(z, dim=1)
-            z = torch.nan_to_num(z, nan=0.0)
+            with autocast(device_type='cuda'):
+                # 1️⃣ Node embeddings
+                z = self.forward(edge_index, edge_weight)
+                z = F.normalize(z, dim=1)
+                z = torch.nan_to_num(z, nan=0.0)
 
-            # 2️⃣ Sample negative edges
-            neg_edge_index = negative_sampling(
-                edge_index,
-                num_nodes=self.num_nodes,
-                num_neg_samples=edge_index.size(1) * neg_samples
-            )
+                # 2️⃣ Sample negative edges
+                neg_edge_index = negative_sampling(
+                    edge_index,
+                    num_nodes=self.num_nodes,
+                    num_neg_samples=edge_index.size(1) * neg_samples
+                )
 
-            # 3️⃣ Compute losses with NaN checks
-            bpr = self.bpr_loss(z, edge_index, neg_edge_index)
-            hierarchy = self.hierarchy_contrastive_loss(z)
-            
-            # Check for NaN in losses
-            if torch.isnan(bpr).any() or torch.isnan(hierarchy).any():
-                print(f"Warning: NaN detected in losses at epoch {epoch}")
-                bpr = torch.nan_to_num(bpr, nan=0.0)
-                hierarchy = torch.nan_to_num(hierarchy, nan=0.0)
-            
-            loss = bpr + lambda_cat * hierarchy
-
-            # 4️⃣ Backprop with gradient checking
-            if torch.isnan(loss).any() or torch.isinf(loss).any():
-                print(f"Skipping backward pass due to NaN/Inf loss at epoch {epoch}")
-                continue
+                # 3️⃣ Compute losses
+                bpr = self.bpr_loss(z, edge_index, neg_edge_index)
+                hierarchy = self.hierarchy_contrastive_loss(z)
+                #department = reparto_triplet_loss_batch(z, self.node_department) if self.node_department is not None else torch.tensor(0.0, device=device)
+                #supplier = supplier_triplet_loss_batch(z, self.node_supplier) if self.node_supplier is not None else torch.tensor(0.0, device=device)
                 
-            loss.backward()
+                # Check for NaN in losses
+                if torch.isnan(bpr) or torch.isnan(hierarchy):
+                    print(f"Warning: NaN detected in losses at epoch {epoch}")
+                    bpr = torch.nan_to_num(bpr, nan=0.0)
+                    hierarchy = torch.nan_to_num(hierarchy, nan=0.0)
+                
+                #loss = bpr + 0.35 * hierarchy + 0.25 * department + 0.15 * supplier
+                loss = bpr + 0.4 * hierarchy
+
+            # 4️⃣ Mixed precision backward pass
+            scaler.scale(loss).backward()
             
-            # Check for NaN gradients
-            has_nan_grad = any(torch.isnan(p.grad).any() for p in self.parameters() if p.grad is not None)
+            # Check for NaN gradients before unscaling
+            has_nan_grad = False
+            for p in self.parameters():
+                if p.grad is not None and torch.isnan(p.grad).any():
+                    has_nan_grad = True
+                    break
+            
             if has_nan_grad:
                 print(f"Warning: NaN gradients detected at epoch {epoch}, skipping update")
                 optimizer.zero_grad()
                 continue
-                
+            
+            # Unscale gradients for clipping
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
-            optimizer.step()
+            
+            # Update parameters
+            scaler.step(optimizer)
+            scaler.update()
+            
             history['train_loss'].append(loss.item())
 
             # 5️⃣ Logging
-            if epoch % 10 == 0:
-                print(f"Epoch {epoch:03d} | BPR: {bpr:.4f}, Hierarchy: {hierarchy:.4f}, Total: {loss:.4f}")
-                torch.cuda.empty_cache()
+            if (epoch + 1) % 10 == 0:
+                print(f"Epoch {epoch:03d} | BPR: {bpr:.4f}, Hierarchy: {hierarchy:.4f}") #, "
+                    #f"Dept: {department:.4f}, Supplier: {supplier:.4f}, Total: {loss:.4f}")
+                
+                # Save checkpoint (optional - can be heavy)
+                if (epoch + 1) % 50 == 0:  # Save less frequently
+                    torch.save(self.state_dict(), f"../LightGCN/lightgcn_model_{epoch:03d}.pth")
 
             # 6️⃣ Validation
-            if val_edges is not None and epoch % eval_every == 0:
+            if val_edges is not None and (epoch + 1) % eval_every == 0:
                 val_pos, val_neg = val_edges
                 auc_score = self.evaluate(val_pos, val_neg, edge_index, edge_weight)
 
-                # Mask NaNs for safety
                 if np.isnan(auc_score):
                     auc_score = 0.0
+                    print(f"Warning: NaN AUC at epoch {epoch}")
 
                 history['val_auc'].append(auc_score)
                 if auc_score > best_auc:
                     best_auc = auc_score
+                    # Save best model
+                    torch.save(self.state_dict(), f"../LightGCN/lightgcn_best_pruning_{epoch:03d}.pth")
 
                 if scheduler is not None:
                     scheduler.step(auc_score)
 
-                if epoch % (eval_every * 5) == 0:
+                if (epoch + 1) % 10 == 0:
                     print(f"Validation AUC: {auc_score:.4f}, Best AUC: {best_auc:.4f}")
+                    
+            # Clear cache every few epochs
+            if epoch % 20 == 0:
+                torch.cuda.empty_cache()
 
         print(f"Training completed. Best validation AUC: {best_auc:.4f}")
         return history

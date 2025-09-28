@@ -199,13 +199,14 @@ def print_fit_power_law(values, counts, name_plot):
     print(f"Length of expanded values: {len(expanded_values)}")
 
     # Fit the power law to the expanded values
-    fit = powerlaw.Fit(expanded_values, discrete=True, xmin= 10)
+    fit = powerlaw.Fit(expanded_values, discrete=True, xmin=3, xmax=2000)
     alpha = fit.power_law.alpha
     xmin = int(fit.power_law.xmin)
-    #xmax = int(fit.power_law.xmax)
+    xmax = int(fit.power_law.xmax)
 
     print(f'Power law exponent: {alpha}')
     print(f'xmin: {xmin}')
+    print(f'xmax: {xmax}')
 
     # Create a figure for plotting
     plt.figure(figsize=(14, 6))
@@ -213,7 +214,7 @@ def print_fit_power_law(values, counts, name_plot):
     # Create the first axis (ax1) for frequency (counts)
     ax1 = plt.gca()
 
-    ax1.plot(values, counts, marker='o', linestyle='', color='gold', markersize=8, 
+    ax1.plot(values, counts, marker='o', linestyle='', color='gold', markersize=8,
              markerfacecolor='#4682B4', linewidth=2, label='Empirical Data')
     ax1.set_xscale('log')
     ax1.set_yscale('log')
@@ -223,7 +224,7 @@ def print_fit_power_law(values, counts, name_plot):
     ax1.tick_params(axis='x', labelsize=12)
 
     ax2 = ax1.twinx()
-    fit.power_law.plot_pdf(color='r', linestyle='--', label = fr'Power law fit ($x_{{\mathrm{{min}}}}$ = {xmin}, α = {alpha:.2f})', ax=ax2)
+    fit.power_law.plot_pdf(color='r', linestyle='--', label = fr'Power law fit ($x_{{\mathrm{{min}}}}$ = {xmin}, $x_{{\mathrm{{max}}}}$ = {xmax}, α = {alpha:.2f})', ax=ax2)
     ax2.set_ylabel('PDF', fontsize=14)
     ax2.tick_params(axis='y', labelsize=12)
 
@@ -435,12 +436,12 @@ def prune_graph(G, node_embeddings, weight_threshold=10, sim_threshold=0.7):
     for u, v, data in G.edges(data=True):
         w = data.get("weight", 1)
 
-        if w > weight_threshold:
-            continue  # always keep
-        else:
-            sim = cosine_similarity(node_embeddings[u], node_embeddings[v])
-            if sim < sim_threshold:  # too far in embedding space
-                edges_to_remove.append((u, v))
+        # if w > weight_threshold:
+        #     continue  # always keep
+        # else:
+        sim = cosine_similarity(node_embeddings[u], node_embeddings[v])
+        if sim < sim_threshold:  # too far in embedding space
+            edges_to_remove.append((u, v))
 
     G.remove_edges_from(edges_to_remove)
     return G

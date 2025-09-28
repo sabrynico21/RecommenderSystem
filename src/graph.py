@@ -18,6 +18,8 @@ class Graph:
         self.deg = defaultdict(int)
 
     def __getattr__(self, attr):
+        if attr == "graph":
+            return super().__getattribute__("graph")  # evita ricorsione
         return getattr(self.graph, attr)
     
     def add_edge(self, node1, node2, weight=None):

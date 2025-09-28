@@ -1,0 +1,31 @@
+Train Graph - Number of nodes: 23592
+Train Graph - Number of edges: 16046353
+node labels len
+Rows: 24269, Columns: 6
+product to node map len 23592
+node labels len
+Rows: 23592, Columns: 6
+nodi rimossi 230
+Epoch 009 | BPR: 0.4726, Hierarchy: 2.0473
+Validation AUC: 0.9241, Best AUC: 0.9241
+Epoch 019 | BPR: 0.4854, Hierarchy: 1.1969
+Validation AUC: 0.9079, Best AUC: 0.9241
+Epoch 029 | BPR: 0.5237, Hierarchy: 0.9312
+Validation AUC: 0.9045, Best AUC: 0.9241
+Epoch 039 | BPR: 0.5041, Hierarchy: 0.9246
+Validation AUC: 0.9172, Best AUC: 0.9241
+Epoch 049 | BPR: 0.5126, Hierarchy: 0.8644
+Validation AUC: 0.9123, Best AUC: 0.9241
+Epoch 059 | BPR: 0.5124, Hierarchy: 0.8411
+Validation AUC: 0.9130, Best AUC: 0.9241
+Epoch 069 | BPR: 0.5154, Hierarchy: 0.8100
+Validation AUC: 0.9123, Best AUC: 0.9241
+Epoch 079 | BPR: 0.5198, Hierarchy: 0.7860
+Validation AUC: 0.9096, Best AUC: 0.9241
+Epoch 089 | BPR: 0.5242, Hierarchy: 0.7683
+Validation AUC: 0.9088, Best AUC: 0.9241
+Epoch 099 | BPR: 0.5254, Hierarchy: 0.7631
+Validation AUC: 0.9071, Best AUC: 0.9241
+Training completed. Best validation AUC: 0.9241
+Edge weights used for training
+Embeddings shape: torch.Size([23592, 64])

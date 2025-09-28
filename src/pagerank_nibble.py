@@ -1,6 +1,7 @@
 import numpy as np
 import random
 from collections import defaultdict
+random.seed(42)
 
 def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
     r = defaultdict(float)
@@ -21,7 +22,8 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
             print("nessun candidato")
             epsilon = epsilon / 1.1
             continue
-        u = random.choice(candidates)
+        #u = random.choice(candidates)
+        u = get_priority_candidate(candidates, dg, q)
         
         retention_ratio = 0.5
         push_val = q[u]
@@ -43,7 +45,7 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
             for i, v in enumerate(neighbors):
                 q[v] += contrib * push_val * weights[i] / sum_weights
 
-        if iterations % 100 == 0 and len(r) >= 30:
+        if iterations % 200 == 0 and len(r) >= 30:
             # normalize by degree (no need to divide by total for ranking)
             r_norm = {node: r[node] / dg[node] for node in r}
             import heapq
@@ -52,8 +54,9 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
             top_list = [node for node, _ in top_items]
 
             if prev_top_list is not None:
-                matches = sum(a == b for a, b in zip(top_list, prev_top_list))
-                if matches >= 24:  # i.e., >= 0.9 overlap
+                common = len(set(top_list) & set(prev_top_list))
+                coverage = common / len(top_list)
+                if coverage >= 0.9:  # 90% overlap
                     break
 
             prev_top_list = top_list    
@@ -63,6 +66,28 @@ def approximate_personalized_page_rank(graph, q, beta, epsilon, mode):
     r = {node: val / total for node, val in r.items()}
     
     return r
+
+def get_priority_candidate(candidates, dg, q):
+    """Select candidate with probability proportional to sqrt(degree) * residual"""
+    if not candidates:
+        return None
+    
+    # Create weights: balance between residual and degree importance
+    weights = []
+    for u in candidates:
+        residual_norm = q[u] / max(dg[u], 1.0)
+        degree_weight = min(10.0, max(1.0, dg[u] ** 0.5))  # sqrt scaling
+        weight = residual_norm * degree_weight
+        weights.append(weight)
+    
+    # Normalize weights
+    total_weight = sum(weights)
+    if total_weight <= 0:
+        return random.choice(candidates)
+    
+    probabilities = [w / total_weight for w in weights]
+    return random.choices(candidates, weights=probabilities)[0]
+
 
 def compute_epsilon(graph, x, mode):
     if mode == "unweighted":
