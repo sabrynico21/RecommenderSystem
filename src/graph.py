@@ -86,8 +86,8 @@ class Graph:
         new_graph.t_min = self.t_min
         new_graph.t_max = self.t_max 
         return new_graph
-    
-    def create_graph(self, edge_weights, t_min, t_max):
+
+    def create_graph(self, edge_weights, t_min=0, t_max=float('inf')):
         self.set_t_min(t_min)
         self.set_t_max(t_max)
         current_index = 0

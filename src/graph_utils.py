@@ -72,7 +72,7 @@ def extract_random_edges(data, val, dev, num, file_path, random_sel="False"):
 
 def query(client):
     #query = f"SELECT DISTINCT(products) FROM grouped_products WHERE products NOT LIKE '% %';"
-    query = f"SELECT cod_prod AS cod_prod, any(descr_liv1) AS descr_liv1, any(descr_liv2) AS descr_liv2, any(descr_liv3) AS descr_liv3, any(descr_liv4) AS descr_liv4 FROM dati_scontrini GROUP BY cod_prod;"
+    query = f"SELECT cod_prod AS cod_prod, any(descr_liv1) AS descr_liv1, any(descr_liv2) AS descr_liv2, any(descr_liv3) AS descr_liv3, any(descr_liv4) AS descr_liv4, any(descr_rep) AS descr_rep, any(replaceRegexpOne(descr_forn, '^[0-9]+\\s+', '')) AS descr_forn FROM dati_scontrini GROUP BY cod_prod;"
     result = client.query(query)
     print(len(result.result_rows)) 
     return result
@@ -100,30 +100,74 @@ def compute_edges(rows):
                 ew[edge] += 1
     return ew
 
-def calculate_edge_weights(client, table_name, mode="all", split_ratio=0.7, seed=42):
+def calculate_edge_weights(client, table_name, mode="all", split_ratio=(0.7, 0.10, 0.20), seed=42):
     client.query("SET max_bytes_before_external_group_by=500000000")
-    #query = f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
     query = f"SELECT id_sc, arrayStringConcat(groupUniqArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
     result = client.query(query)
     rows = result.result_rows
 
     if mode == "all":
-        edge_weights = compute_edges(rows)
-        return edge_weights
+        return compute_edges(rows)
 
     elif mode == "split":
         random.seed(seed)
         random.shuffle(rows)
-        split_index = int(len(rows) * split_ratio)
-        rows_A, rows_B = rows[:split_index], rows[split_index:]
 
-        edge_weights_A = compute_edges(rows_A)
-        edge_weights_B = compute_edges(rows_B)
+        if isinstance(split_ratio, float):  # only train/test
+            split_index = int(len(rows) * split_ratio)
+            rows_train, rows_test = rows[:split_index], rows[split_index:]
+            return compute_edges(rows_train), compute_edges(rows_test)
 
-        return edge_weights_A, edge_weights_B
+        elif isinstance(split_ratio, (tuple, list)) and len(split_ratio) == 3:
+            train_ratio, val_ratio, test_ratio = split_ratio
+            assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, \
+                "Train/Val/Test ratios must sum to 1.0"
+
+            n = len(rows)
+            idx_train = int(n * train_ratio)
+            idx_val = idx_train + int(n * val_ratio)
+
+            rows_train = rows[:idx_train]
+            rows_val = rows[idx_train:idx_val]
+            rows_test = rows[idx_val:]
+
+            return (
+                compute_edges(rows_train),
+                compute_edges(rows_val),
+                compute_edges(rows_test)
+            )
+
+        else:
+            raise ValueError("split_ratio must be float (train/test) or tuple of 3 values (train/val/test)")
 
     else:
         raise ValueError("Mode must be 'all' or 'split'")
+
+
+# def calculate_edge_weights(client, table_name, mode="all", split_ratio=0.7, seed=42):
+#     client.query("SET max_bytes_before_external_group_by=500000000")
+#     #query = f"SELECT id_sc, arrayStringConcat(groupArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
+#     query = f"SELECT id_sc, arrayStringConcat(groupUniqArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
+#     result = client.query(query)
+#     rows = result.result_rows
+
+#     if mode == "all":
+#         edge_weights = compute_edges(rows)
+#         return edge_weights
+
+#     elif mode == "split":
+#         random.seed(seed)
+#         random.shuffle(rows)
+#         split_index = int(len(rows) * split_ratio)
+#         rows_A, rows_B = rows[:split_index], rows[split_index:]
+
+#         edge_weights_A = compute_edges(rows_A)
+#         edge_weights_B = compute_edges(rows_B)
+
+#         return edge_weights_A, edge_weights_B
+
+#     else:
+#         raise ValueError("Mode must be 'all' or 'split'")
 
 
 def display_edge_weight_distribution(edge_weights):
@@ -430,7 +474,7 @@ def create_pyg_data_from_networkx(G, weight_attr='weight'):
 def cosine_similarity(u, v):
     return torch.dot(u, v) / (torch.norm(u) * torch.norm(v))
 
-def prune_graph(G, node_embeddings, weight_threshold=10, sim_threshold=0.7):
+def prune_graph(G, node_embeddings, weight_threshold=None, sim_threshold=0.7):
     edges_to_remove = []
 
     for u, v, data in G.edges(data=True):

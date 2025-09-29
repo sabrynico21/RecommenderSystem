@@ -3,9 +3,9 @@ import argparse
 import pickle
 from collections import defaultdict
 from dotenv import load_dotenv
-#import clickhouse_connect
+import clickhouse_connect
 from graph import Graph
-from graph_utils import create_pyg_data_from_networkx, prune_graph, calculate_clusters, extract_non_adjacent_nodes, calculate_edge_weights, display_edge_weight_distribution
+from graph_utils import *
 from LightGCN import *
 import torch
 import ast
@@ -111,18 +111,40 @@ def main():
     args = parser.parse_args()
     load_dotenv()
 
-    # client = clickhouse_connect.get_client(
-    #         host=os.getenv('CLICKHOUSE_HOST'),
-    #         port=int(os.getenv('CLICKHOUSE_PORT')),
-    #         username=os.getenv('CLICKHOUSE_USER'),
-    #         password=os.getenv('CLICKHOUSE_PASSWORD'),
-    #         database=os.getenv('CLICKHOUSE_DATABASE')
-    #         )
+    with open("../data/metadata.pkl", "rb") as f:
+        metadata = pickle.load(f)
+    print(metadata)
+    print("Metadata loaded")
+    exit(0)
+
+    client = clickhouse_connect.get_client(
+            host=os.getenv('CLICKHOUSE_HOST'),
+            port=int(os.getenv('CLICKHOUSE_PORT')),
+            username=os.getenv('CLICKHOUSE_USER'),
+            password=os.getenv('CLICKHOUSE_PASSWORD'),
+            database=os.getenv('CLICKHOUSE_DATABASE')
+            )
+    result = query(client)
+    metadata = {
+        row[0]: {   # cod_prod as key
+            "descr_liv1": row[1],
+            "descr_liv2": row[2],
+            "descr_liv3": row[3],
+            "descr_liv4": row[4],
+            "descr_rep": row[5],
+            "descr_forn": row[6]
+        }
+        for row in result.result_rows
+    }
+    with open("../data/metadata.pkl", "wb") as f:
+        pickle.dump(metadata, f)
+    print("Metadata saved")
+    exit(0)
 
     if args.task == "prova":
-        with open("../data/metadata_labels.pkl", "rb") as f:
-            metadata = pickle.load(f)
-        print("Metadata loaded")
+        # with open("../data/metadata_labels.pkl", "rb") as f:
+        #     metadata = pickle.load(f)
+        # print("Metadata loaded")
         table_name = 'dati_scontrini'
         if (os.path.exists(f"../data/train_edge_weights.pkl") and os.path.exists(f"../data/test_edge_weights.pkl")):
             with open(f"../data/train_edge_weights.pkl", "rb") as f:
@@ -154,22 +176,22 @@ def main():
         print("Test Graph - Number of nodes:", test_graph.number_of_nodes())
         print("Test Graph - Number of edges:", test_graph.number_of_edges())
         
-        with open("../data/selected_nodes.txt") as f:
-            selected_nodes = ast.literal_eval(f.read())
-        train_neighbors = defaultdict(set)
-        test_neighbors = defaultdict(set)
-        ground_truth = defaultdict(set)
-        selected_nodes = selected_nodes[:20]
-        for node in selected_nodes:
-            t_n =train_graph.get_neighbors(train_graph.get_product_to_index(node))
-            train_neighbors[node] = set([train_graph.get_index_to_product(n) for n in t_n])
-            t_n = test_graph.get_neighbors(test_graph.get_product_to_index(node))
-            test_neighbors[node] = set([test_graph.get_index_to_product(n) for n in t_n])
-            ground_truth[node] = set(test_neighbors[node] - train_neighbors[node])
-        #print(train_neighbors)
-        #print(test_neighbors)
-        print(ground_truth)
-        print("ottenute etichette")
+        # with open("../data/selected_nodes.txt") as f:
+        #     selected_nodes = ast.literal_eval(f.read())
+        # train_neighbors = defaultdict(set)
+        # test_neighbors = defaultdict(set)
+        # ground_truth = defaultdict(set)
+        # selected_nodes = selected_nodes[:20]
+        # for node in selected_nodes:
+        #     t_n =train_graph.get_neighbors(train_graph.get_product_to_index(node))
+        #     train_neighbors[node] = set([train_graph.get_index_to_product(n) for n in t_n])
+        #     t_n = test_graph.get_neighbors(test_graph.get_product_to_index(node))
+        #     test_neighbors[node] = set([test_graph.get_index_to_product(n) for n in t_n])
+        #     ground_truth[node] = set(test_neighbors[node] - train_neighbors[node])
+        # #print(train_neighbors)
+        # #print(test_neighbors)
+        # print(ground_truth)
+        # print("ottenute etichette")
         # metadata = simple_align_labels(metadata, train_graph.product_to_index)
         # node_embeddings = train_lightgcn(train_graph, metadata, val_graph)
         # print("Embeddings shape:", node_embeddings.shape)  # [num_nodes, 64]
@@ -183,12 +205,14 @@ def main():
         node_embeddings = model.get_embeddings(data.edge_index, edge_weight=data.edge_attr)
         print("Embeddings shape:", node_embeddings.shape)  # [num_nodes, 64]
 
-        G_pruned = prune_graph(train_graph, node_embeddings, weight_threshold=20, sim_threshold=0.7)
+        G_pruned = prune_graph(train_graph, node_embeddings, weight_threshold=20, sim_threshold=0.6)
         print("G pruned - Number of nodes:", G_pruned.number_of_nodes())
         print("G pruned - Number of edges:", G_pruned.number_of_edges())
         
-        #G_pruned_edge_weights = get_edge_weights_from_nx(G_pruned.graph)
-        #display_edge_weight_distribution(G_pruned_edge_weights)
+        G_pruned_edge_weights = get_edge_weights_from_nx(G_pruned.graph)
+        display_edge_weight_distribution(G_pruned_edge_weights)
+        plot_degree_distribution(G_pruned)
+        exit(0)
 
         selected_nodes_indices = [G_pruned.get_product_to_index(node) for node in selected_nodes]
         embeddings_predictions = defaultdict(set)

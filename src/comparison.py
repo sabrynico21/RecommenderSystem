@@ -55,18 +55,22 @@ def filter_clusters(G_pruned, non_adjacent, selected_node, node_embeddings):
     return filtered 
     
 
-def get_similar_products(graph, node_embeddings, product_idx, threshold=0.8):
+def get_similar_products(graph, node_embeddings, product_idx, mode, threshold=0.8):
     product_embedding = node_embeddings[product_idx]
     similarities = torch.nn.functional.cosine_similarity(product_embedding.unsqueeze(0), node_embeddings, dim=1)
-    
-    # Get indices of nodes connected to product_idx (including itself)
-    connected = set(graph.get_neighbors(product_idx))
-    connected.add(product_idx)  # Exclude self as well
 
-    # Find indices with similarity > threshold and not connected
-    similar_indices = [idx for idx, sim in enumerate(similarities) if sim > threshold and idx not in connected]
+    if mode == "all":
+        # Return all indices with similarity > threshold (including connected)
+        similar_indices = [idx for idx, sim in enumerate(similarities) if sim > threshold]
+    elif mode == "non_adjacent":
+        # Exclude connected nodes (as in your current code)
+        connected = set(graph.get_neighbors(product_idx))
+        connected.add(product_idx)
+        similar_indices = [idx for idx, sim in enumerate(similarities) if sim > threshold and idx not in connected]
+    else:
+        raise ValueError("Unknown mode: choose 'all' or 'non_adjacent'")
+
     similar_scores = similarities[similar_indices]
-
     return similar_indices, similar_scores
 
 def get_edge_weights_from_nx(G):
@@ -135,16 +139,18 @@ def main():
             #         database=os.getenv('CLICKHOUSE_DATABASE')
             #         )
             table_name = 'dati_scontrini'
-            train_edge_weights, test_edge_weights = calculate_edge_weights(client, table_name, "split")
+            train_edge_weights, test_edge_weights, val_edge_weights = calculate_edge_weights(client, table_name, "split")
             with open(f"../data/train_edge_weights.pkl", "wb") as f:
                 pickle.dump(train_edge_weights, f)
             with open(f"../data/test_edge_weights.pkl", "wb") as f:
                 pickle.dump(test_edge_weights, f)
+            with open(f"../data/val_edge_weights.pkl", "wb") as f:
+                pickle.dump(val_edge_weights, f)
 
         train_graph = Graph()
         val_graph = Graph()
-        train_graph.create_graph(train_edge_weights, int(args.t_min), float(args.t_max)) 
-        val_graph.create_graph(val_edge_weights, int(args.t_min), float(args.t_max))
+        train_graph.create_graph(train_edge_weights) 
+        val_graph.create_graph(val_edge_weights)
 
         with open ("../data/metadata_labels.pkl", "rb") as f:
             metadata = pickle.load(f)
@@ -158,7 +164,7 @@ def main():
             with open(f"../data/train_edge_weights.pkl", "rb") as f:
                 train_edge_weights = pickle.load(f)
         train_graph = Graph()
-        train_graph.create_graph(train_edge_weights, int(args.t_min), float(args.t_max)) 
+        train_graph.create_graph(train_edge_weights) 
         data = create_pyg_data_from_networkx(train_graph, weight_attr='weight')
         model = LightGCN(num_nodes=data.num_nodes, embedding_dim=64, num_layers=3)
 
@@ -174,6 +180,7 @@ def main():
         with open(f"../data/G_pruned_p.pkl", "wb") as f:
             pickle.dump(G_pruned, f)
     elif args.task == "comparison":
+        prediction_mode = "all"
         with open("../data/selected_nodes.txt") as f:
             selected_nodes = ast.literal_eval(f.read())
         selected_nodes = selected_nodes[:20]
@@ -185,6 +192,11 @@ def main():
         #G_pruned_edge_weights = get_edge_weights_from_nx(G_pruned.graph)
         #fit_powerlaw_on_edge_distribution(G_pruned_edge_weights)
         #fit_powerlaw_on_degree_distribution(G_pruned)
+        if (os.path.exists(f"../data/train_edge_weights.pkl") and os.path.exists(f"../data/val_edge_weights.pkl")):
+            with open(f"../data/train_edge_weights.pkl", "rb") as f:
+                train_edge_weights = pickle.load(f)
+        train_graph = Graph()
+        train_graph.create_graph(train_edge_weights) 
         if (os.path.exists(f"../data/ground_truth.pkl")):
             with open("../data/ground_truth.pkl", "rb") as f:
                 ground_truth = pickle.load(f)
@@ -195,10 +207,9 @@ def main():
                 with open(f"../data/test_edge_weights.pkl", "rb") as f:
                     test_edge_weights = pickle.load(f)
 
-            train_graph = Graph()
+            
             test_graph = Graph()
-            train_graph.create_graph(train_edge_weights, int(args.t_min), float(args.t_max)) 
-            test_graph.create_graph(test_edge_weights, int(args.t_min), float(args.t_max))
+            test_graph.create_graph(test_edge_weights)
         
             train_neighbors = defaultdict(set)
             test_neighbors = defaultdict(set)
@@ -236,37 +247,20 @@ def main():
         selected_nodes_indices = [G_pruned.get_product_to_index(node) for node in selected_nodes]
         embeddings_predictions = defaultdict(set)
         for i,node_idx in enumerate(selected_nodes_indices):
-            similar_indices, similar_scores = get_similar_products(train_graph, node_embeddings, node_idx)
+            similar_indices, similar_scores = get_similar_products(train_graph, node_embeddings, node_idx, prediction_mode)
             embeddings_predictions[selected_nodes[i]] = set([G_pruned.get_index_to_product(x) for x in similar_indices])
-        #similar_indices = similar_indices.tolist()
-        #print(f"Products similar to product 0: {[train_graph.get_index_to_product(x) for x in similar_indices]}")
-        #intersections = {key: ground_truth[key] & embeddings_predictions.get(key, set()) for key in set(ground_truth) | set(embeddings_predictions)}
-        #non_empty_count = sum(1 for intersection_set in intersections.values() if intersection_set)
-        #print(f"Number of nodes with non-empty intersection: {non_empty_count} out of {len(selected_nodes)}")
+        
 
         clusters, _ = calculate_clusters(G_pruned, selected_nodes_indices, args.mode)
-        #clusters_filtered = []
-        #tensor_data = torch.tensor(clusters, dtype=torch.float32)
-        #torch.save(tensor_data, "../data/pagerank_features.pt")
-        #exit(0)
-        #top_15_clusters = [[x for x in clusters[i][1:16]] for i in range(len(clusters))]
         clusters_predictions = defaultdict(set)
-        #clusters_predictions_filtered = defaultdict(set)
         for i, node in enumerate(selected_nodes):
-            non_adjacent = extract_non_adjacent_nodes(train_graph, clusters[i], G_pruned.get_product_to_index(selected_nodes[i]))
-            #print("len non adiacenti:", len(non_adjacent))
-            if len(non_adjacent) > 0:
-               clusters[i] = non_adjacent
-            #    filtered = filter_clusters(G_pruned, non_adjacent, selected_nodes[i], node_embeddings)
-            # else:
-            #    filtered = []
-            # clusters_filtered.append(filtered)
+            if prediction_mode == "non_adjacent":
+                non_adjacent = extract_non_adjacent_nodes(train_graph, clusters[i], G_pruned.get_product_to_index(selected_nodes[i]))
+                #print("len non adiacenti:", len(non_adjacent))
+                if len(non_adjacent) > 0:
+                    clusters[i] = non_adjacent
+            
             clusters_predictions[node] = set([G_pruned.get_index_to_product(x) for x in clusters[i]])
-            #clusters_predictions_filtered[node] = set([G_pruned.get_index_to_product(x) for x in clusters_filtered[i]])
-            #print("ground truth", ground_truth[node])
-            #print("top 15", top_15_clusters[node])
-        #intersections_clusters = {key: ground_truth[key] & clusters_predictions.get(key, set()) for key in set(ground_truth) | set(clusters_predictions)}
-        #intersections_clusters_filtered = {key: ground_truth[key] & clusters_predictions_filtered.get(key, set()) for key in set(ground_truth) | set(clusters_predictions_filtered)}
         emb_intersections = []
         clu_intersections = []
         for key in selected_nodes:
@@ -292,8 +286,48 @@ def main():
             gt = ground_truth.get(key, set())
             intersection = gt & union_pred
             union_intersections.append(len(intersection))
-            
+        
+        non_connected_emb = defaultdict(set)
+        non_connected_clu = defaultdict(set)
+        connected_weights_emb = defaultdict(list)
+        connected_weights_clu = defaultdict(list)
 
+        for key in selected_nodes:
+            key_idx = train_graph.get_product_to_index(key)
+            connected = set(train_graph.get_neighbors(key_idx))
+            
+            # Embeddings predictions
+            emb_pred_indices = [train_graph.get_product_to_index(x) for x in embeddings_predictions[key] if x in train_graph.product_to_index]
+            non_connected_emb[key] = set([x for x in embeddings_predictions[key] if train_graph.get_product_to_index(x) not in connected])
+            connected_weights_emb[key] = [
+                train_graph.get_weight(key_idx, idx)
+                for idx in emb_pred_indices if idx in connected
+            ]
+            
+            # Clusters predictions
+            clu_pred_indices = [train_graph.get_product_to_index(x) for x in clusters_predictions[key] if x in train_graph.product_to_index]
+            non_connected_clu[key] = set([x for x in clusters_predictions[key] if train_graph.get_product_to_index(x) not in connected])
+            connected_weights_clu[key] = [
+                train_graph.get_weight(key_idx, idx)
+                for idx in clu_pred_indices if idx in connected
+            ]
+        all_weights_emb = [w for weights in connected_weights_emb.values() for w in weights]
+        all_weights_clu = [w for weights in connected_weights_clu.values() for w in weights]
+
+        plt.figure(figsize=(10,5))
+        plt.hist(all_weights_emb, bins=30, alpha=0.5, label='Embeddings Connected Weights')
+        plt.hist(all_weights_clu, bins=30, alpha=0.5, label='Clusters Connected Weights')
+        plt.xlabel('Edge Weight')
+        plt.ylabel('Frequency')
+        plt.legend()
+        plt.title('Distribution of Edge Weights for Connected Products')
+        plt.show()
+        # Print some stats
+        print("Embeddings - Non-connected items per key:", {k: len(v) for k, v in non_connected_emb.items()})
+        print("Clusters - Non-connected items per key:", {k: len(v) for k, v in non_connected_clu.items()})
+        print("Embeddings - Connected weights stats: min =", min(all_weights_emb), "max =", max(all_weights_emb), "mean =", sum(all_weights_emb)/len(all_weights_emb) if all_weights_emb else 0)
+        print("Clusters - Connected weights stats: min =", min(all_weights_clu), "max =", max(all_weights_clu), "mean =", sum(all_weights_clu)/len(all_weights_clu) if all_weights_clu else 0)
+        exit
         avg_intersections = sum(emb_intersections) / len(emb_intersections)
         print(f"Average intersection len for embeddings_predictions: {avg_intersections:.3f}")
         avg_intersections = sum(clu_intersections) / len(clu_intersections)
@@ -301,10 +335,6 @@ def main():
         avg_union_intersection = sum(union_intersections) / len(union_intersections)
         print(f"Average intersection len for union of embeddings and clusters predictions: {avg_union_intersection:.3f}")
 
-        # non_empty_count_clusters = sum(1 for intersection_set in intersections_clusters.values() if intersection_set)
-        # non_empty_count_clusters_filtered = sum(1 for intersection_set in intersections_clusters_filtered.values() if intersection_set)
-        # print(f"Number of nodes with non-empty intersection using clusters: {non_empty_count_clusters} out of {len(selected_nodes)}")
-        # print(f"Number of nodes with non-empty intersection using filtered clusters: {non_empty_count_clusters_filtered} out of {len(selected_nodes)}")
         for name, preds in [
             ("Embeddings", embeddings_predictions),
             ("Clusters", clusters_predictions),
