@@ -7,19 +7,43 @@ import networkx as nx
 import math
 import re
 from collections import defaultdict
+import torch 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Graph:
-    def __init__(self):
+    def __init__(self, node_labels=None):
         self.graph = nx.Graph()
         self.product_to_index = dict()
         self.index_to_product = dict()
         self.t_min = 0
         self.t_max = float('inf')
         self.deg = defaultdict(int)
+        if node_labels is not None:
+            self.node_categories = {}
+            for level in ["descr_liv1", "descr_liv2", "descr_liv3", "descr_liv4"]:
+                if level in node_labels.columns:
+                    self.node_categories[level] = torch.tensor(
+                        node_labels[level].values, 
+                        dtype=torch.long,
+                        device=device
+                    )
+            # if "descr_forn" in node_labels.columns:
+            #     self.node_supplier = torch.tensor(
+            #         node_labels["descr_forn"].values,
+            #         dtype=torch.long,
+            #         device=device
+            #     )
+
+            # if "descr_rep" in node_labels.columns:
+            #     self.node_department = torch.tensor(
+            #         node_labels["descr_rep"].values,
+            #         dtype=torch.long,
+            #         device=device
+            #     )
 
     def __getattr__(self, attr):
         if attr == "graph":
-            return super().__getattribute__("graph")  # evita ricorsione
+            return super().__getattribute__("graph")
         return getattr(self.graph, attr)
     
     def add_edge(self, node1, node2, weight=None):

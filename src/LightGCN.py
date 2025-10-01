@@ -52,10 +52,10 @@ def train_lightgcn(train_graph, node_labels, val_graph):
     model = LightGCN(num_nodes=data.num_nodes, node_labels=node_labels, embedding_dim=64, num_layers=3).to(device)
 
     if edge_weight is not None:
-        history = model.train_model(edge_index, edge_weight, val_edge_index=val_edge_index, epochs=100)
+        history = model.train_model(edge_index, train_graph.node_categories, edge_weight=edge_weight, val_edge_index=val_edge_index, epochs=100)
         print("Edge weights used for training")
     else:
-        history = model.train_model(edge_index, epochs=30)  # No edge weights
+        history = model.train_model(edge_index, train_graph.node_categories, val_edge_index=val_edge_index, epochs=30)  # No edge weights
     #torch.save(model.state_dict(), "../LightGCN/lightgcn_model.pth")
     torch.save(history, "../LightGCN/lightgcn_history_pruning.pth")
     node_embeddings = model.get_embeddings(data.edge_index, edge_weight=edge_weight)
@@ -164,35 +164,11 @@ def reparto_triplet_loss_batch(z, reparto_labels, margin=0.8, num_triplets=1000)
     return F.relu(pos_dist - neg_dist + margin).mean()
 
 class LightGCN(nn.Module):
-    def __init__(self, num_nodes, node_labels=None, embedding_dim=64, num_layers=3):
+    def __init__(self, num_nodes, embedding_dim=64, num_layers=3):
         super().__init__()
         self.num_nodes = num_nodes
         self.embedding_dim = embedding_dim
         self.num_layers = num_layers
-        
-        if node_labels is not None:
-            self.node_categories = {}
-            for level in ["descr_liv1", "descr_liv2", "descr_liv3", "descr_liv4"]:
-                if level in node_labels.columns:
-                    self.node_categories[level] = torch.tensor(
-                        node_labels[level].values, 
-                        dtype=torch.long,
-                        device=device
-                    )
-   
-            # if "descr_forn" in node_labels.columns:
-            #     self.node_supplier = torch.tensor(
-            #         node_labels["descr_forn"].values,
-            #         dtype=torch.long,
-            #         device=device
-            #     )
-
-            # if "descr_rep" in node_labels.columns:
-            #     self.node_department = torch.tensor(
-            #         node_labels["descr_rep"].values,
-            #         dtype=torch.long,
-            #         device=device
-            #     )
         
         self.embedding = nn.Embedding(num_nodes, embedding_dim).to(device)
         self.convs = nn.ModuleList([LGConv().to(device) for _ in range(num_layers)])
@@ -221,15 +197,15 @@ class LightGCN(nn.Module):
 
     import torch.nn.functional as F
 
-    def hierarchy_contrastive_loss(self, z, temperature=0.2, level_weights=[0.4, 0.3, 0.2, 0.1], eps=1e-8):
+    def hierarchy_contrastive_loss(self, z, node_categories, temperature=0.2, level_weights=[0.4, 0.3, 0.2, 0.1], eps=1e-8):
         N = z.size(0)
         device = z.device
 
         # Initialize hierarchical similarity matrix
         W = torch.zeros((N, N), device=device)
 
-        for w, key in zip(level_weights, self.node_categories.keys()):
-            lbls_raw = self.node_categories[key].to(device)
+        for w, key in zip(level_weights, node_categories.keys()):
+            lbls_raw = node_categories[key].to(device)
             
             # Handle label alignment safely
             lbls = torch.full((N,), -1, dtype=torch.long, device=device)
@@ -302,7 +278,7 @@ class LightGCN(nn.Module):
         
         return loss
     
-    def train_model(self, edge_index, edge_weight=None, epochs=300, lr=0.01, 
+    def train_model(self, edge_index, node_categories, edge_weight=None, epochs=300, lr=0.01, 
                 neg_samples=1, eval_every=10, val_edge_index=None):
         self.train()
         optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=1e-5)
@@ -349,7 +325,7 @@ class LightGCN(nn.Module):
 
                 # 3️⃣ Compute losses
                 bpr = self.bpr_loss(z, edge_index, neg_edge_index)
-                hierarchy = self.hierarchy_contrastive_loss(z)
+                hierarchy = self.hierarchy_contrastive_loss(z, node_categories)
                 #department = reparto_triplet_loss_batch(z, self.node_department) if self.node_department is not None else torch.tensor(0.0, device=device)
                 #supplier = supplier_triplet_loss_batch(z, self.node_supplier) if self.node_supplier is not None else torch.tensor(0.0, device=device)
                 
