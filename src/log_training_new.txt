@@ -1,0 +1,13 @@
+
+Epoch 009 | BPR: 0.6927, Hierarchy: 0.7749
+Validation AUC: 0.8816, Best AUC: 0.8816
+Epoch 019 | BPR: 0.6925, Hierarchy: 0.7154
+Validation AUC: 0.9104, Best AUC: 0.9104
+Epoch 029 | BPR: 0.6927, Hierarchy: 0.6482
+Validation AUC: 0.9858, Best AUC: 0.9858
+Epoch 039 | BPR: 0.6927, Hierarchy: 0.6029
+Validation AUC: 0.9941, Best AUC: 0.9941
+Epoch 049 | BPR: 0.6929, Hierarchy: 0.5771
+Validation AUC: 0.9968, Best AUC: 0.9968
+Training completed. Best validation AUC: 0.9968
+Edge weights used for training

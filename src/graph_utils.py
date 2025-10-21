@@ -10,7 +10,7 @@ from collections import defaultdict
 import collections
 #random.seed(42)
 
-def link_prediction(random_edges, graph, df, testing_file_path, mode):
+def link_prediction(random_edges, graph, df, testing_file_path, mode, beta, c):
     or_same_cluster = []
     re_same_cluster = []
     total_jaccard_sim = []
@@ -21,9 +21,10 @@ def link_prediction(random_edges, graph, df, testing_file_path, mode):
         red_graph = graph.new_graph_removing_receipts_from_df(df, random_edges[i])
         print("Number of edges:", graph.number_of_edges())
         print("Number of edges:", red_graph.number_of_edges())
+
         product1 = graph.get_product_to_index(random_edges[i][0])
         product2 = graph.get_product_to_index(random_edges[i][1])
-        or_count, red_count, jaccard_similarity, or_mean, red_mean = compare_clusters(graph, red_graph,[product1, product2], mode)
+        or_count, red_count, jaccard_similarity, or_mean, red_mean = compare_clusters(graph, red_graph,[product1, product2], mode, beta, c)
         or_same_cluster.append(or_count)
         re_same_cluster.append(red_count)
         total_jaccard_sim.append(jaccard_similarity)
@@ -243,14 +244,14 @@ def print_fit_power_law(values, counts, name_plot):
     print(f"Length of expanded values: {len(expanded_values)}")
 
     # Fit the power law to the expanded values
-    fit = powerlaw.Fit(expanded_values, discrete=True, xmin=3, xmax=2000)
+    fit = powerlaw.Fit(expanded_values, discrete=True, xmin=1)
     alpha = fit.power_law.alpha
     xmin = int(fit.power_law.xmin)
-    xmax = int(fit.power_law.xmax)
+    #xmax = int(fit.power_law.xmax)
 
     print(f'Power law exponent: {alpha}')
     print(f'xmin: {xmin}')
-    print(f'xmax: {xmax}')
+    #print(f'xmax: {xmax}')
 
     # Create a figure for plotting
     plt.figure(figsize=(14, 6))
@@ -268,7 +269,7 @@ def print_fit_power_law(values, counts, name_plot):
     ax1.tick_params(axis='x', labelsize=12)
 
     ax2 = ax1.twinx()
-    fit.power_law.plot_pdf(color='r', linestyle='--', label = fr'Power law fit ($x_{{\mathrm{{min}}}}$ = {xmin}, $x_{{\mathrm{{max}}}}$ = {xmax}, α = {alpha:.2f})', ax=ax2)
+    fit.power_law.plot_pdf(color='r', linestyle='--', label = fr'Power law fit ($x_{{\mathrm{{min}}}}$ = {xmin}, α = {alpha:.2f})', ax=ax2)
     ax2.set_ylabel('PDF', fontsize=14)
     ax2.tick_params(axis='y', labelsize=12)
 
@@ -311,48 +312,93 @@ def remove_random_edges(graph, percentage):
     num_edges_to_remove = int(percentage * graph.number_of_edges() / 100)
     edges = list(graph.edges())   
     edges_to_remove = random.sample(edges, num_edges_to_remove)
-    graph_copy.remove_edges_from(edges_to_remove)    
+    for u, v in edges_to_remove:
+        w = graph.get_weight(u, v)
+        graph_copy.deg[u] -= 1
+        graph_copy.deg[v] -= 1
+        graph_copy.w_deg[u] -= w
+        graph_copy.w_deg[v] -= w
+    graph_copy.remove_edges_from(edges_to_remove)
     return graph_copy
 
 import time
-def calculate_clusters(graph, selected_nodes, mode):
-    beta = 0.85
+def calculate_clusters(graph, selected_nodes, mode, beta, c): 
     clusters = []
     times = []
     for node in selected_nodes:
         start_time = time.time()
-        _, cluster = page_rank_nibble(graph, beta, mode, node)
-        end_time = time.time()
+        _, cluster = page_rank_nibble(graph, beta, mode, node, c)
+        end_time = time.time() 
         times.append(end_time - start_time)
-        print("or len: ", len(cluster))
+
+        # remove the starting node from the cluster (if present)
+        if node in cluster:
+            cluster.remove(node)
+
+        print("cl len: ", len(cluster))
         clusters.append(cluster)
+
     return clusters, times
 
-def metric_calculation(graph, original_cluster, reduced_cluster):
+# def metric_calculation(graph, original_cluster, reduced_cluster):
+#     result = []
+#     sensitivity = []
+#     precision = []
+#     #cluster_ratio = []
+#     #jaccard_sim = []
+#     for or_cluster, red_cluster in zip(original_cluster, reduced_cluster):
+#         den = num = 0
+#         for u, v in combinations(or_cluster, 2):
+#             if graph.has_edge(u, v):
+#                 den+= 1
+#                 elements_present = np.isin([u, v], red_cluster)
+#                 if elements_present.all():
+#                     num+= 1
+#         if den != 0:
+#             result.append(num / den)
+#         #print("or", len(or_cluster))
+#         count = sum(1 for elem in red_cluster if elem in or_cluster)
+#         sensitivity.append(count / len(or_cluster))
+#         precision.append(count / len(red_cluster))
+#         #cluster_ratio.append(len(red_cluster) / len(or_cluster))
+#         #jaccard_sim.append(compute_jaccard_sim(or_cluster, red_cluster))
+#         or_mean_degree = graph.mean_degree(or_cluster) 
+#         red_mean_degree = graph.mean_degree(red_cluster) 
+#     return result, sensitivity, precision, or_mean_degree, red_mean_degree
+
+def metric_calculation(graph, original_clusters, reduced_clusters):
     result = []
     sensitivity = []
     precision = []
-    #cluster_ratio = []
-    #jaccard_sim = []
-    for or_cluster, red_cluster in zip(original_cluster, reduced_cluster):
+    or_mean_degrees = []
+    red_mean_degrees = []
+
+    for or_cluster, red_cluster in zip(original_clusters, reduced_clusters):
+        or_set = set(or_cluster)
+        red_set = set(red_cluster)
+
+        # CCR: fraction of edges in or_cluster also present in red_cluster
         den = num = 0
-        for u, v in combinations(or_cluster, 2):
-            if graph.has_edge(u, v):
-                den+= 1
-                elements_present = np.isin([u, v], red_cluster)
-                if elements_present.all():
-                    num+= 1
-        if den != 0:
-            result.append(num / den)
-        #print("or", len(or_cluster))
-        count = sum(1 for elem in red_cluster if elem in or_cluster)
-        sensitivity.append(count / len(or_cluster))
-        precision.append(count / len(red_cluster))
-        #cluster_ratio.append(len(red_cluster) / len(or_cluster))
-        #jaccard_sim.append(compute_jaccard_sim(or_cluster, red_cluster))
-        or_mean_degree = graph.mean_degree(or_cluster) 
-        red_mean_degree = graph.mean_degree(red_cluster) 
-    return result, sensitivity, precision, or_mean_degree, red_mean_degree
+        # Use subgraph for fast edge iteration
+        subgraph = graph.subgraph(or_set)
+        for u, v in subgraph.edges():
+            den += 1
+            if u in red_set and v in red_set:
+                num += 1
+        result.append(num / den if den != 0 else 0)
+
+        # Sensitivity: fraction of original cluster present in reduced cluster
+        intersection = or_set & red_set
+        sensitivity.append(len(intersection) / len(or_set) if len(or_set) > 0 else 0)
+
+        # Precision: fraction of reduced cluster present in original cluster
+        precision.append(len(intersection) / len(red_set) if len(red_set) > 0 else 0)
+
+        # Mean degrees
+        or_mean_degrees.append(graph.mean_degree(or_cluster))
+        red_mean_degrees.append(graph.mean_degree(red_cluster))
+
+    return result, sensitivity, precision, or_mean_degrees, red_mean_degrees
 
 def sample_nodes_within_degree_range(graph, degree_min, degree_max, x, random_sel="False"):
     eligible_nodes = [node for node, degree in graph.degree() if degree_min < degree <= degree_max]
@@ -384,9 +430,9 @@ def compute_mean_edge_weights(graph, cluster):
     num_edges = graph.get_subgraph(cluster).number_of_edges()
     return edge_weights / num_edges if num_edges > 0 else 0
 
-def compare_clusters(graph, reduced_graph, products, mode):
-    or_cluster, _ = calculate_clusters(graph, [products[0]], mode)
-    red_cluster, _ = calculate_clusters(reduced_graph, [products[0]], mode)
+def compare_clusters(graph, reduced_graph, products, mode, beta, c):
+    or_cluster, _ = calculate_clusters(graph, [products[0]], mode, beta, c)
+    red_cluster, _ = calculate_clusters(reduced_graph, [products[0]], mode, beta, c)
     print("lengths:", len(or_cluster[0]), len(red_cluster[0]))
     or_count = 0 
     red_count = 0
@@ -401,8 +447,8 @@ def compare_clusters(graph, reduced_graph, products, mode):
     red_mean = compute_mean_edge_weights(reduced_graph, red_cluster[0])
     return or_count, red_count, jaccard_similarity, or_mean, red_mean
 
-import ast
-def validation(graph, reduced_graph, mode, num_nodes=0, random="False"):
+import pickle
+def validation(graph, reduced_graph, mode, beta, c, num_nodes=0, random="False"):
     degree_min = [10]
     degree_max = [float('inf')]
     for min_d, max_d in zip(degree_min, degree_max):
@@ -411,17 +457,18 @@ def validation(graph, reduced_graph, mode, num_nodes=0, random="False"):
             with open("../data/selected_nodes.txt", "w") as f:
                 f.write(str(selected_nodes))
         else:
-            with open("../data/selected_nodes.txt") as f:
-                selected_nodes = ast.literal_eval(f.read())
-            selected_nodes = [graph.product_to_index[node] for node in selected_nodes]
+            with open("../data/test_nodes.pkl", "rb") as f:
+                selected_nodes = pickle.load(f)
+            #selected_nodes = [graph.product_to_index[node] for node in selected_nodes]
             
-        single_node_cluster = []
-        original_cluster, times = calculate_clusters(graph, selected_nodes, mode)
-        reduced_cluster, _ = calculate_clusters(reduced_graph, selected_nodes, mode) 
+        #single_node_cluster = []
+        original_cluster, times = calculate_clusters(graph, selected_nodes, mode, beta, c)
+        reduced_cluster, _ = calculate_clusters(reduced_graph, selected_nodes, mode, beta, c) 
         print("len or cl:", len(original_cluster))
         print("len red cl:", len(reduced_cluster))
         result, sensitivity, precision, or_mean_degree, red_mean_degree = metric_calculation(graph, original_cluster, reduced_cluster)
-        single_node_cluster = len(original_cluster) - len(result)
+        #single_node_cluster = len(original_cluster) - len(result)
+        print ("metric calcu done")
         len_cluster = [len(cluster) for cluster in original_cluster]
         #selected_nodes = [graph.index_to_product[node] for node in selected_nodes]
         or_cluster = [cluster[:min(15, len(cluster))] for cluster in original_cluster]
@@ -430,12 +477,12 @@ def validation(graph, reduced_graph, mode, num_nodes=0, random="False"):
         weigh = "w" if mode == "weighted" else "unw"
         with open(f'../Results/{weigh}_test_epsilon_performances.txt', 'a') as f:
             #f.write(f"selected_nodes: {selected_nodes}\n")
-            f.write(f"graph: {graph.t_min} - {graph.t_max}\n")
+            #f.write(f"graph: {graph.t_min} - {graph.t_max}\n")
             f.write(f"CCR: {result}\n")
             f.write(f"sensitivity: {sensitivity}\n")
             f.write(f"precision: {precision}\n")
             f.write(f"lenghts: {len_cluster}\n")
-            f.write(f"single_node_cluster: {single_node_cluster}\n")
+            #f.write(f"single_node_cluster: {single_node_cluster}\n")
             f.write(f"times: {times}\n")
             #f.write(f"jaccard_similarity: {jaccard_sim}\n")
             f.write(f"or_cluster: {or_cluster}\n")
@@ -474,18 +521,27 @@ def create_pyg_data_from_networkx(G, weight_attr='weight'):
 def cosine_similarity(u, v):
     return torch.dot(u, v) / (torch.norm(u) * torch.norm(v))
 
-def prune_graph(G, node_embeddings, weight_threshold=None, sim_threshold=0.7):
-    edges_to_remove = []
+def prune_graph(G, node_embeddings, weight_threshold=None, sim_threshold=0.7, mode=None, model=None, edge_index=None):
+    if mode == "prune_by_link_prediction":
+        edges_to_remove = model.prune_with_predict_link(edge_index, threshold=sim_threshold)
+        print("Edges to remove by link prediction:", len(edges_to_remove))
+    else:
+        edges_to_remove = []
 
-    for u, v, data in G.edges(data=True):
-        w = data.get("weight", 1)
-
-        # if w > weight_threshold:
-        #     continue  # always keep
-        # else:
-        sim = cosine_similarity(node_embeddings[u], node_embeddings[v])
-        if sim < sim_threshold:  # too far in embedding space
-            edges_to_remove.append((u, v))
+        for u, v, data in G.edges(data=True):
+            w = data.get("weight", 1)
+            if weight_threshold is not None and w > weight_threshold: 
+                continue 
+            else:
+                sim = cosine_similarity(node_embeddings[u], node_embeddings[v])
+                if sim < sim_threshold: 
+                    edges_to_remove.append((u, v))
+    for u, v in edges_to_remove:
+        G.deg[u] -= 1
+        G.deg[v] -= 1
+        w = G.get_weight(u, v)
+        G.w_deg[u] -= w
+        G.w_deg[v] -= w
 
     G.remove_edges_from(edges_to_remove)
     return G
@@ -495,3 +551,16 @@ def extract_non_adjacent_nodes(G, cluster, x):
     non_adjacent = [node for node in cluster if node != x and node not in neighbors_x]
     #top_30 = non_adjacent[:min(30,len(non_adjacent))]
     return non_adjacent
+
+
+def subtract_edgeweights(graph, weights_to_remove): 
+    for edge, value in weights_to_remove.items():
+        u, v = edge
+        if value <= 0:
+            continue
+        new_weight = graph[u][v].get('weight', 0) - value
+        if new_weight > 0:
+            graph[u][v]['weight'] = new_weight
+        else:
+            graph.remove_edge(u, v)
+    return graph

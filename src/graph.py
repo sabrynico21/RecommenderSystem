@@ -10,23 +10,43 @@ from collections import defaultdict
 import torch 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def simple_align_labels(node_labels_df, product_to_node_map):
+    """
+    Simple alignment - removes nodes that don't exist in the map
+    """
+    print('node labels len')
+    rows, columns = node_labels_df.shape
+    print(f"Rows: {rows}, Columns: {columns}")
+    print('product to node map len', len(product_to_node_map.keys()))
+    # Get only the product IDs that exist in both the DataFrame and the map
+    common_products = set(node_labels_df.index) & set(product_to_node_map.keys())
+    
+    if not common_products:
+        raise ValueError("No common products found between node_labels_df and product_to_node_map")
+    
+    # Filter DataFrame and map node IDs
+    aligned_df = node_labels_df.loc[list(common_products)].copy()
+    aligned_df.index = [product_to_node_map[product_id] for product_id in aligned_df.index]
+    
+    # Sort by node ID
+    aligned_df = aligned_df.sort_index()
+    print('node labels len')
+    rows, columns = aligned_df.shape
+    print(f"Rows: {rows}, Columns: {columns}")
+    return aligned_df
+
 class Graph:
-    def __init__(self, node_labels=None):
+    def __init__(self):
         self.graph = nx.Graph()
         self.product_to_index = dict()
         self.index_to_product = dict()
         self.t_min = 0
         self.t_max = float('inf')
         self.deg = defaultdict(int)
-        if node_labels is not None:
-            self.node_categories = {}
-            for level in ["descr_liv1", "descr_liv2", "descr_liv3", "descr_liv4"]:
-                if level in node_labels.columns:
-                    self.node_categories[level] = torch.tensor(
-                        node_labels[level].values, 
-                        dtype=torch.long,
-                        device=device
-                    )
+        self.w_deg = defaultdict(int)
+        self.node_categories = {}
+        self.label_mappings = {}
+        self.levels_names = []
             # if "descr_forn" in node_labels.columns:
             #     self.node_supplier = torch.tensor(
             #         node_labels["descr_forn"].values,
@@ -68,6 +88,8 @@ class Graph:
         if x is None:
             return self.product_to_index
         else:
+            if x not in self.product_to_index:
+                return None
             return self.product_to_index[x]
     
     def get_index_to_product(self, x=None):
@@ -82,21 +104,39 @@ class Graph:
         return []
     
     def get_weight(self, u, v):
-        if self.graph.has_node(u) and self.graph.has_node(v) and self.graph.has_edge(u, v):
-            return self.graph[u][v].get('weight', 1)
-        return 0
+        if self.graph.has_edge(u, v) == False:
+            return 0
+        #if self.graph.has_node(u) and self.graph.has_node(v) and self.graph.has_edge(u, v):
+        #return self.graph[u][v].get('weight', 1)
+        edge_data = self.graph.get_edge_data(u, v)
+        if edge_data is not None and 'weight' in edge_data:
+            return edge_data['weight']
+        return 1
         
-    def get_degree(self, nodes=None, weight=None):
+    # def get_degree(self, nodes=None, weight=None):
+    #     if nodes is None:
+    #         if weight is None:
+    #             return self.graph.degree()
+    #         else:
+    #             return self.graph.degree(weight=weight)
+    #     else:
+    #         if weight is None:
+    #             return self.graph.degree(nodes)
+    #         else:
+    #             return self.graph.degree(nodes, weight=weight)
+    
+    def get_deg(self, nodes=None, weight=None):
         if nodes is None:
             if weight is None:
-                return self.graph.degree()
+                return self.deg
             else:
-                return self.graph.degree(weight=weight)
+                return self.w_deg
         else:
             if weight is None:
-                return self.graph.degree(nodes)
+                return self.deg[nodes] 
             else:
-                return self.graph.degree(nodes, weight=weight)
+                return self.w_deg[nodes]
+
 
     def mean_degree(self, nodes):
         degrees = [self.deg[self.index_to_product[n]] for n in nodes]
@@ -109,16 +149,18 @@ class Graph:
         new_graph.index_to_product = self.index_to_product.copy()
         new_graph.t_min = self.t_min
         new_graph.t_max = self.t_max 
+        new_graph.deg = self.deg.copy()
+        new_graph.w_deg = self.w_deg.copy()
+
         return new_graph
 
-    def create_graph(self, edge_weights, t_min=0, t_max=float('inf')):
+    def create_graph(self, edge_weights, node_labels=None, t_min=0, t_max=float('inf')):
         self.set_t_min(t_min)
         self.set_t_max(t_max)
         current_index = 0
         for edge, weight in edge_weights.items():
-            self.deg[edge[0]] += 1
-            self.deg[edge[1]] += 1
-            if weight >= self.t_min and weight <= self.t_max: 
+            
+            if weight >= self.t_min and weight <= self.t_max:
                 product_i, product_j = edge
 
                 for p in [product_i, product_j]:
@@ -131,6 +173,34 @@ class Graph:
                 product_j_index = self.product_to_index[product_j]
 
                 self.add_edge(product_i_index, product_j_index, weight=weight)   
+                self.deg[product_i_index] += 1
+                self.deg[product_j_index] += 1
+                self.w_deg[product_i_index] += weight
+                self.w_deg[product_j_index] += weight
+
+        if node_labels is not None:
+            node_labels = simple_align_labels(node_labels, self.product_to_index)
+             
+            self.levels_names = ["descr_liv1", "descr_liv2", "descr_liv3", "descr_liv4"]
+            for level in self.levels_names:
+                if level in node_labels.columns:
+                    # Get unique labels and create mapping
+                    unique_labels = node_labels[level].unique()
+                    label_to_id = {label: idx for idx, label in enumerate(unique_labels)}
+                    id_to_label = {idx: label for label, idx in label_to_id.items()}
+                    
+                    self.label_mappings[level] = {
+                        'label_to_id': label_to_id,
+                        'id_to_label': id_to_label
+                    }
+                    
+                    # Convert labels to tensor using the mapping
+                    mapped_labels = node_labels[level].map(label_to_id)
+                    self.node_categories[level] = torch.tensor(
+                        mapped_labels.values, 
+                        dtype=torch.long,
+                        device=device
+                    )
         return
 
     @classmethod
@@ -159,17 +229,20 @@ class Graph:
             return None
     
     def subtract_edgeweights(self, weights_to_remove):
-        new_graph = Graph()
-        new_graph.graph.add_nodes_from(self.graph.nodes(data=True))
         
-        for u, v, data in self.graph.edges(data=True):
-            weight_to_remove = weights_to_remove.get((u, v), 0)
-            new_weight = data.get('weight', 0) - weight_to_remove
-            if new_weight >= self.t_min:
-                new_graph.add_edge(u, v, weight=new_weight)
-        
-        return new_graph
-    
+        for (u, v), w in weights_to_remove.items():
+            new_weight = self.get_weight(u, v) - w
+            if new_weight > 0:
+                self.graph[u][v]['weight'] = new_weight
+            else:
+                if self.graph.has_edge(u, v):
+                    self.remove_edge(u, v)
+                    self.deg[u] -= 1
+                    self.deg[v] -= 1
+                    self.w_deg[u] -= w
+                    self.w_deg[v] -= w
+
+
     def select_random_edges(self, weight_min, weight_max, num):
         valid_edges = [(self.index_to_product[u], self.index_to_product[v], w) for u, v, w in self.graph.edges(data="weight") if weight_min <= w < weight_max] #Choose a specific pair of products that were sold together
         local_random = random.Random(42)
@@ -194,13 +267,16 @@ class Graph:
     def new_graph_removing_receipts_from_df(self, df, random_edge):
         # Create regex patterns to match full words (tokens)
         p1, p2 = random_edge[0], random_edge[1]
-        pattern1 = re.compile(rf'\b{re.escape(p1)}\b')
-        pattern2 = re.compile(rf'\b{re.escape(p2)}\b')
+        # pattern1 = re.compile(rf'\b{re.escape(p1)}\b')
+        # pattern2 = re.compile(rf'\b{re.escape(p2)}\b')
+
+        pattern1 = re.compile(rf'\b{re.escape(str(p1))}\b')
+        pattern2 = re.compile(rf'\b{re.escape(str(p2))}\b')
 
         # Filter rows where both products appear in the 'products' column
         #filtered_df = df[df['products'].apply(lambda x: bool(pattern1.search(x)) and bool(pattern2.search(x)))]
         filtered_df = df[df['products'].apply(lambda x: bool(pattern1.search(str(x))) and bool(pattern2.search(str(x))))]
-
+        
         weights_to_remove = defaultdict(int)
 
         for _, row in filtered_df.iterrows():
@@ -211,8 +287,8 @@ class Graph:
                         continue
                     edge = (self.product_to_index[products[i]], self.product_to_index[products[j]])
                     weights_to_remove[edge] += 1
-
-        new_graph = self.subtract_edgeweights(weights_to_remove)
+        new_graph = self.copy()
+        new_graph.subtract_edgeweights(weights_to_remove)
         return new_graph
 
     def remove_random_edges(self, percentage):

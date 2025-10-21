@@ -517,3 +517,40 @@ def compute_min_weights_by_graph():
         unw_min_values.append(compute_min_edge_weights(min_ts[i], max_ts[i], "False"))
 
     return min_values, unw_min_values
+
+def plot_non_adjacent_proportion(portion_non_connected, model):
+        portion_non_connected = np.array(portion_non_connected)
+
+        # Safety check: make sure it can be split into 4 groups
+        if len(portion_non_connected) % 4 != 0:
+            raise ValueError(
+                f"Expected portion_non_connected to be divisible by 4, got {len(portion_non_connected)}"
+            )
+
+        groups = np.split(portion_non_connected, 4)  # 4 equal groups
+        group_labels = ['Degree 1-10', 'Degree 10-100', 'Degree 100-1000', 'Degree 1000+']
+
+        colors = ['#fc8d62','#8da0cb','#e78ac3', '#66c2a5']  # Distinct colors for each group
+
+        fig, ax = plt.subplots(figsize=(10,6))
+
+        box = ax.boxplot(
+            groups,
+            labels=group_labels,
+            patch_artist=True,
+            showmeans=True,  # highlight the mean
+            meanline=True
+        )
+
+        # Apply colors
+        for patch, color in zip(box['boxes'], colors):
+            patch.set_facecolor(color)
+
+        # Style improvements
+        ax.set_ylabel('Proportion of Non-Connected Nodes', fontsize=12)
+        ax.set_title('Non-Connected Node Proportion by Seed Degree Range', fontsize=14)
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+        plt.tight_layout()
+        plt.savefig(f"non_connected_proportion_{model}.png")
+        plt.show()
