@@ -93,26 +93,32 @@ def query(client):
 
 def compute_edges(rows):
     ew = defaultdict(int)
-    for row in rows:
+    receipt_id = []
+    for i, row in enumerate(rows):
+        receipt_id.append(row[0])
         products = list(set(row[1].split(' ')))
         for i in range(len(products)):
             for j in range(i + 1, len(products)):
                 edge = tuple(sorted((products[i], products[j])))
                 ew[edge] += 1
-    return ew
+    return (ew, receipt_id)
 
-def calculate_edge_weights(client, table_name, mode="all", split_ratio=(0.7, 0.10, 0.20), seed=42):
-    client.query("SET max_bytes_before_external_group_by=500000000")
-    query = f"SELECT id_sc, arrayStringConcat(groupUniqArray(cod_prod), ' ') AS products FROM {table_name} GROUP BY id_sc;"
-    result = client.query(query)
-    rows = result.result_rows
+import pandas as pd
+
+def calculate_edge_weights(csv_file_path, mode="all", split_ratio=(0.7, 0.10, 0.20), random_sel="False"):
+    # Read the CSV file
+    df = pd.read_csv(csv_file_path)
+    
+    # Convert to the same format as the original query result
+    rows = [(row['id_sc'], row['products']) for _, row in df.iterrows()]
 
     if mode == "all":
-        return compute_edges(rows)
+        edge_weights, receipt_ids = compute_edges(rows) 
+        return edge_weights
 
     elif mode == "split":
-        random.seed(seed)
-        random.shuffle(rows)
+        localRandom = random.Random() if random_sel else random.Random(42)
+        localRandom.shuffle(rows)
 
         if isinstance(split_ratio, float):  # only train/test
             split_index = int(len(rows) * split_ratio)
@@ -564,3 +570,25 @@ def subtract_edgeweights(graph, weights_to_remove):
         else:
             graph.remove_edge(u, v)
     return graph
+
+def remap_graph_to_train_ids(val_graph, val_to_product_map, product_to_train_map, drop_missing=True):
+    mapping = {}
+    missing = []
+    
+    for val_node_id in val_graph.nodes():
+        product_id = val_to_product_map[val_node_id]
+        if product_id in product_to_train_map:
+            mapping[val_node_id] = product_to_train_map[product_id]
+        else:
+            missing.append((val_node_id, product_id))
+    
+    if missing and not drop_missing:
+        raise KeyError(f"Missing product_ids in train map: {missing[:10]}{'...' if len(missing)>10 else ''}")
+    
+    # Relabel the validation graph, dropping missing nodes if necessary
+    val_graph_remapped = nx.relabel_nodes(val_graph.graph, mapping, copy=True)
+    if drop_missing and missing:
+        print("nodi rimossi", len(missing))
+        val_graph_remapped.remove_nodes_from([n for n, _ in missing])
+    
+    return val_graph_remapped

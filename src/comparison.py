@@ -163,14 +163,26 @@ def main():
             #         password=os.getenv('CLICKHOUSE_PASSWORD'),
             #         database=os.getenv('CLICKHOUSE_DATABASE')
             #         )
-            table_name = 'dati_scontrini'
-            train_edge_weights, test_edge_weights, val_edge_weights = calculate_edge_weights(client, table_name, "split")
+            #table_name = 'dati_scontrini'
+            train_info, test_info, val_info = calculate_edge_weights("../data/grouped_products.csv", "split")
+            train_edge_weights = train_info[0]
+            test_edge_weights = test_info[0]
+            val_edge_weights = val_info[0]
+            train_receipt_ids = train_info[1]
+            test_receipt_ids = test_info[1]
+            val_receipt_ids = val_info[1]
             with open("../data/train_edge_weights.pkl", "wb") as f:
                 pickle.dump(train_edge_weights, f)
+            with open("../data/train_receipt_ids.pkl", "wb") as f:
+                pickle.dump(train_receipt_ids, f)
             with open("../data/test_edge_weights.pkl", "wb") as f:
                 pickle.dump(test_edge_weights, f)
+            with open("../data/test_receipt_ids.pkl", "wb") as f:
+                pickle.dump(test_receipt_ids, f)
             with open("../data/val_edge_weights.pkl", "wb") as f:
                 pickle.dump(val_edge_weights, f)
+            with open("../data/val_receipt_ids.pkl", "wb") as f:
+                pickle.dump(val_receipt_ids, f)
 
         with open ("../data/metadata_labels.pkl", "rb") as f:
             metadata = pickle.load(f)
@@ -180,14 +192,18 @@ def main():
 
         if not (os.path.exists("../data/train_graph.pkl")):
             train_graph = Graph()
-            train_graph.create_graph(train_edge_weights, node_labels=metadata) 
+            train_graph.create_graph(train_edge_weights, node_labels=metadata)
+            with open("../data/train_graph.pkl", "wb") as f:
+                pickle.dump(train_graph, f) 
         else:
             with open("../data/train_graph.pkl", "rb") as f:
                 train_graph = pickle.load(f)
 
         val_graph = Graph()
         val_graph.create_graph(val_edge_weights)
-        
+        with open("../data/val_graph.pkl", "wb") as f:
+            pickle.dump(val_graph, f)
+        exit(0)
         node_embeddings = train_lightgcn(train_graph, val_graph)
         print("Embeddings shape:", node_embeddings.shape)
     
