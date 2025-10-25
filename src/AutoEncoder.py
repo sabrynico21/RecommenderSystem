@@ -134,8 +134,7 @@ if __name__ == "__main__":
             self.decoder = nn.Sequential(
                 nn.Linear(emb_dim, hidden_dim),
                 nn.ReLU(),
-                nn.Linear(hidden_dim, input_dim),
-                nn.Sigmoid()  # because input is 0/1
+                nn.Linear(hidden_dim, input_dim)
             )
 
         def get_embedding(self, features):
@@ -232,7 +231,8 @@ if __name__ == "__main__":
         val_features=None,
         val_node_categories=None,
         lambda_hierarchy=0.3,
-        device='cuda'
+        device='cuda',
+        recon_pos_weight=10.0
     ):
         print("Starting training...")
         logger.log_operation("transfer", "Moving model to device", __file__, inspect.currentframe().f_lineno)
@@ -366,8 +366,20 @@ if __name__ == "__main__":
 
                 with autocast(device_type=device):
                     z_batch, x_recon_batch = model(batch_x)
-                    recon_loss = F.mse_loss(x_recon_batch, batch_x)
-                    
+                    #recon_loss = F.mse_loss(x_recon_batch, batch_x)
+                    pos_w = torch.tensor(recon_pos_weight, device=x_recon_batch.device, dtype=torch.float32)
+                    bce_fn = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction='mean')
+                    recon_loss = bce_fn(x_recon_batch, batch_x)
+                    # for monitoring compute recall on ones
+                    with torch.no_grad():
+                        probs = torch.sigmoid(x_recon_batch)
+                        preds = (probs > 0.5).float()
+                        total_ones = batch_x.sum()
+                        if total_ones.item() > 0:
+                            tp = (preds * batch_x).sum()
+                            batch_recall_ones = (tp / (total_ones + 1e-12)).item()
+                        else:
+                            batch_recall_ones = 0.0
                     hier_loss = hierarchy_contrastive_loss(z_batch, batch_cats)
                     batch_loss = (1-lambda_hierarchy) * recon_loss + lambda_hierarchy * hier_loss
 
@@ -379,7 +391,7 @@ if __name__ == "__main__":
                 
                 total_loss += batch_loss.item() * (end - start)
                 num_batches += 1
-                print (f"\rEpoch {epoch+1:03d} | Batch {num_batches} / {((num_nodes - 1) // batch_size) + 1} | Batch Loss: {batch_loss.item():.4f} | Recon Loss: {recon_loss.item():.4f} | Hier Loss: {hier_loss.item():.4f}", end='')
+                print (f"\rEpoch {epoch+1:03d} | Batch {num_batches} / {((num_nodes - 1) // batch_size) + 1} | Batch Loss: {batch_loss.item():.4f} | Recon Loss: {recon_loss.item():.4f} | Hier Loss: {hier_loss.item():.4f} | RecallOnOnes: {batch_recall_ones:.3f}", end='')
                 # Delete batch tensors to free memory immediately
                 logger.log_operation("deallocation", "Deleting batch tensors", __file__, inspect.currentframe().f_lineno)
                 del batch_x, batch_cats, z_batch, x_recon_batch, batch_loss, recon_loss, hier_loss
@@ -415,20 +427,36 @@ if __name__ == "__main__":
 
                         with autocast(device_type='cuda'):
                             z_val, x_val_recon = model(val_x)
-                            recon_loss = F.mse_loss(x_val_recon, val_x)
+                            #recon_loss = F.mse_loss(x_val_recon, val_x)
+                            pos_w = torch.tensor(recon_pos_weight, device=x_recon_batch.device, dtype=torch.float32)
+                            bce_fn = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction='mean')
+                            recon_loss = bce_fn(x_recon_batch, batch_x)
+                            # for monitoring compute recall on ones
+                            with torch.no_grad():
+                                probs = torch.sigmoid(x_recon_batch)
+                                preds = (probs > 0.5).float()
+                                total_ones = batch_x.sum()
+                                if total_ones.item() > 0:
+                                    tp = (preds * batch_x).sum()
+                                    batch_recall_ones = (tp / (total_ones + 1e-12)).item()
+                                else:
+                                    batch_recall_ones = 0.0
                             hier_loss = hierarchy_contrastive_loss(z_val, val_batch_cats)
                             val_batch_loss = recon_loss + lambda_hierarchy * hier_loss
                         
                         val_total_loss += val_batch_loss.item() * (end - start)
+                        val_total_recall_ones += batch_recall_ones * (end - start)
                         
                         # Clean up validation batch
                         logger.log_operation("deallocation", "Deleting validation batch tensors", __file__, inspect.currentframe().f_lineno)
                         del val_x, val_batch_cats, z_val, x_val_recon, recon_loss, hier_loss, val_batch_loss
 
                 val_total_loss /= num_val_nodes
+                val_total_recall_ones /= num_val_nodes
                 history['val_loss'].append(val_total_loss)
-                logger.log_operation("log", f"Validation Loss: {val_total_loss:.4f}", __file__, inspect.currentframe().f_lineno)
-                print(f"Validation Loss: {val_total_loss:.4f}")
+                history['val_recall_ones'].append(val_total_recall_ones)
+                logger.log_operation("log", f"Validation Loss: {val_total_loss:.4f} | RecallOnOnes: {val_total_recall_ones:.3f}", __file__, inspect.currentframe().f_lineno)
+                print(f"Validation Loss: {val_total_loss:.4f} | RecallOnOnes: {val_total_recall_ones:.3f}")
 
                 if scheduler is not None:
                     scheduler.step(val_total_loss)
