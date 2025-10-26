@@ -20,6 +20,50 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logger = MemoryLogger.MemoryLogger(enabled=args.log_memory)
 
+    def load_node_features(edge_weights):
+        """
+        Given edge weights as a dict of (node1, node2) -> weight,
+        create a sparse feature matrix where each row is a node and each column contains 
+        the information about with which other nodes the node is connected.
+        
+        Args:
+            edge_weights: dict mapping (node1, node2) -> weight
+
+        Returns:
+            features_sparse_tensor: torch.sparse.FloatTensor [num_nodes, num_nodes]
+            node_to_idx: dict mapping node ID -> row index
+            idx_to_node: dict mapping row index -> node ID
+        """
+        # Create a mapping from node IDs to row indices
+        all_nodes = set()
+        for (n1, n2) in edge_weights.keys():
+            all_nodes.add(n1)
+            all_nodes.add(n2)
+        all_nodes = sorted(list(all_nodes))
+        node_to_idx = {n: i for i, n in enumerate(all_nodes)}
+        idx_to_node = {i: n for n, i in node_to_idx.items()}
+        num_nodes = len(all_nodes)
+
+        # Build sparse matrix
+        rows = []
+        cols = []
+        data = []
+        for (n1, n2), weight in edge_weights.items():
+            rows.append(node_to_idx[n1])
+            cols.append(node_to_idx[n2])
+            data.append(1)
+        
+        # Create scipy sparse matrix
+        features_sparse = csr_matrix((data, (rows, cols)), shape=(num_nodes, num_nodes))
+        
+        # Convert to PyTorch sparse tensor (to match the docstring)
+        coo = features_sparse.tocoo()
+        indices = torch.tensor([coo.row, coo.col], dtype=torch.long)
+        values = torch.tensor(coo.data, dtype=torch.float)
+        features_sparse_tensor = torch.sparse.FloatTensor(indices, values, torch.Size(coo.shape))
+
+        return features_sparse_tensor, node_to_idx, idx_to_node
+
     def load_receipt_features(csv_path, receipt_ids=None, exclude_products=None):
         """
         Load a CSV file where each row is a receipt and contains a space-separated list of product IDs.
@@ -428,12 +472,12 @@ if __name__ == "__main__":
                         with autocast(device_type='cuda'):
                             z_val, x_val_recon = model(val_x)
                             #recon_loss = F.mse_loss(x_val_recon, val_x)
-                            pos_w = torch.tensor(recon_pos_weight, device=x_recon_batch.device, dtype=torch.float32)
+                            pos_w = torch.tensor(recon_pos_weight, device=x_val_recon.device, dtype=torch.float32)
                             bce_fn = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction='mean')
-                            recon_loss = bce_fn(x_recon_batch, batch_x)
+                            recon_loss = bce_fn(x_val_recon, batch_x)
                             # for monitoring compute recall on ones
                             with torch.no_grad():
-                                probs = torch.sigmoid(x_recon_batch)
+                                probs = torch.sigmoid(x_val_recon)
                                 preds = (probs > 0.5).float()
                                 total_ones = batch_x.sum()
                                 if total_ones.item() > 0:
